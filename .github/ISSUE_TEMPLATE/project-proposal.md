@@ -2,19 +2,33 @@
 name: Project Proposal
 about: 새로운 프로젝트 아이디어를 제안하기 위한 양식입니다.
 title: "[PROPOSAL] 프로젝트명"
-labels: proposal, enhancement
+labels: project-proposal
 assignees: ''
 ---
 
-## 📝 프로젝트 제목
-- 개요: 
+## 기본 정보 (Basic Info)
 
-## 🎯 목적 및 배경
-- 왜 이 프로젝트가 필요한가?
+- **프로젝트명**: 직관적이고 기억하기 쉬운 이름
+- **개요**: 프로젝트를 한 문장으로 설명
+- **동기**: 왜 이 프로젝트를 시작하는가? (Why)
+- **예상 결과**: 최종적으로 완성된 형태
 
-## 🛠 주요 기능 및 기술 스택
-- 어떤 기능을 구현하며, 어떤 기술(Docker, Prometheus 등)을 쓰는가?
+## 기술 스택 (Tech Stack)
 
-## 📅 예상 일정
-- 1주차: 환경 구축
-- 2주차: 기능 개발
+- **Frontend**: React, Vue, Svelte 등
+- **Backend**: Node.js, Python, Go 등
+- **Database**: PostgreSQL, MongoDB 등
+- **Deployment**: Vercel, AWS, Cloudflare 등
+
+## 주요 기능 (Key Features)
+
+- 핵심 기능 1 (Core Feature)
+- 핵심 기능 2 (Core Feature)
+- 핵심 기능 3 (Core Feature)
+
+## 마일스톤 (Milestones)
+
+- **W 1-4**: 기획, 설계, 초기 설정
+- **W 5-8**: 핵심 기능 구현, MVP
+- **W 9-12**: 기도록, 추가 기능, 테스트
+- **W 13-16**: 최적화, 문서화, 최종 발표
