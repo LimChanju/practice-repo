@@ -1,0 +1,29 @@
+name: Python Lint CI
+
+on:
+  pull_request:
+    branches: [ "main" ] # PR이 main으로 향할 때만 실행
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10' # Isaac Sim 및 SeRT 권장 파이썬 버전에 맞게 수정 가능
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8
+
+    - name: Run Flake8 Linting
+      run: |
+        # 치명적인 문법 에러(Syntax error) 및 정의되지 않은 이름 검사
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # 경고성 스타일 에러는 검사하되, 길이 제한(E501) 등은 무시하고 CI를 실패시키지 않음(--exit-zero)
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
