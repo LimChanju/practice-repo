@@ -21,10 +21,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -83,14 +83,14 @@ jobs:
                   fh.write(summary + "\n")
 
       - name: Upload audit report artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pip-audit-report
           path: audit_result.json
 
       - name: Create GitHub Issue if vulnerabilities found
         if: steps.parse.outputs.vuln_count != '0'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const count = ${{ steps.parse.outputs.vuln_count }};
