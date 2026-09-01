@@ -1,0 +1,87 @@
+{
+  "schema_version": "bc_cbf_runtime_handoff_v1",
+  "purpose": "Frozen pure-BC plus fixed-CBF runtime for building the public-server explicit-feedback collector",
+  "base_commit": "c4ce195f4942dbbe21e0090b6b28bd379a022d11",
+  "policy": {
+    "path": "v3_chan/policies/bc_pick_place_v1_100eps.pt",
+    "sha256": "fc4801dfdd7ae4e3edf8760277a1d87fd540c12bf27aeb0a06a3eefdbd5ba8c3",
+    "size_bytes": 366976,
+    "mode": "direct_bc",
+    "observation_dim": 84,
+    "observation_version": "obs_v1_state_controller_phase",
+    "action_dim": 5,
+    "action_version": "action_v1_controller_target_delta",
+    "hidden_dims": [
+      256,
+      256
+    ],
+    "mask_human_observations": true
+  },
+  "evaluation_reward": {
+    "checkpoint_metadata_version": "reward_v0_hri_errp",
+    "override": "reward_v4_post_release_stability_hri_errp",
+    "note": "The override is evaluation logging only and does not change BC actions."
+  },
+  "task_runtime": {
+    "single_pick": true,
+    "max_steps": 4500,
+    "gripper_mode": "event",
+    "fixed_orientation": true,
+    "require_release_for_success": true,
+    "pseudo_errp_enabled": false,
+    "strict_task_semantics": {
+      "schema_version": "physical_event_driven_pick_place_v3",
+      "place_xy_tolerance_m": 0.05,
+      "place_z_tolerance_m": 0.03,
+      "place_max_cube_speed_mps": 0.05,
+      "minimum_cube_lift_m": 0.05,
+      "grasp_confirmation_steps": 6,
+      "place_confirmation_steps": 6,
+      "release_settle_confirmation_steps": 12,
+      "cbf_pause_enter_norm_radps": 0.05,
+      "cbf_pause_exit_norm_radps": 0.01,
+      "cbf_pause_exit_confirmation_steps": 6
+    }
+  },
+  "cbf": {
+    "controller": "cbf",
+    "scope": "tracked_hands_to_distal_panda_links",
+    "safe_gap_m": 0.05,
+    "activation_gap_m": 0.13,
+    "gamma_per_s": 8.0,
+    "prediction_horizon_s": 0.15,
+    "max_prediction_buffer_m": 0.08,
+    "max_joint_speed_rad_s": 2.0,
+    "fail_closed_on_invalid_active_hand": true,
+    "stop_on_infeasible": true
+  },
+  "files": {
+    "v3_chan/policies/bc_pick_place_v1_100eps.pt": "fc4801dfdd7ae4e3edf8760277a1d87fd540c12bf27aeb0a06a3eefdbd5ba8c3",
+    "v3_chan/evaluate_rollout_policy.py": "071328477de86107cbdf72d4460bd819aadff2c010a395b69cace985df019588",
+    "v3_chan/run_physical_safety_benchmark.py": "f5df2237c79fcd9c671d6c445e45861a3cd953419eee52af0b4fab8af4b92de4",
+    "v3_chan/physical_safety_controllers.py": "0ac9d25505091377dc290855c9520d3186749b1133e5f29050aeda814e0287ce",
+    "v3_chan/robot_environment_safety.py": "b06bed6d69f2aa532e8cb9ad5a26f6395d2c219920f1d5947300ab0aa914cacd",
+    "v3_chan/rl/pick_place_env.py": "d6a16b7f6eae37041167ea79dc4e70f42687ef96de0ac0c021f55e1b601c4b87",
+    "v3_chan/rl/rewards.py": "f7716d407560054227b21721498c24e221b447439aa77b21f8bb1dbe5c3a6679",
+    "v3_chan/rl/strict_task_semantics.py": "83b18ab2a1f3a9fd1a3d8d0139568230100a24632b645f9938e3bab7a8210f6e",
+    "tests/test_v3_strict_task_semantics.py": "74454721999f8656be6493f420c1da459e57628fc0239ba47f8f6f2e178e4033",
+    "tests/test_v3_run_physical_safety_benchmark.py": "9801edaf57f1e260d6c80d55126d28f21ba65ecd3c2ba240da3ec0d16a0246e3",
+    "tests/test_v3_physical_safety_controllers.py": "c84ccef952a6d34b5b53c8bf5e7e9df5d2c244cdbcc89c572498118d41be0ca8",
+    "tests/test_v3_robot_environment_safety.py": "370d1072d346aaa7492279d92f2bf3304fbffd82de0fd48f5c383429df0c12cc"
+  },
+  "verification": {
+    "unit_test_count": 69,
+    "unit_test_result": "passed",
+    "source_py_compile": "passed"
+  },
+  "collection_readiness": {
+    "production_collection_ready": false,
+    "runtime_handoff_ready": true,
+    "locks": [
+      "Implement a dedicated explicit_feedback and encounters schema; do not reuse errp placeholders.",
+      "Record complete nominal RMPFlow, filtered CBF, and actually applied joint-action vectors.",
+      "Abort or fail closed on invalid live tracking during an eligible encounter.",
+      "Add prompt/response timestamp validation and a protocol-specific fail-closed validator."
+    ]
+  }
+}

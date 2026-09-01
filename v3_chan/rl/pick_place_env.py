@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, Mapping
 
 import numpy as np
 
@@ -15,22 +16,50 @@ from .actions import (
 from .observations import (
     apply_dynamic_hri_observation,
     build_observation,
+    controller_event_onehot,
     flatten_observation,
     task_phase_onehot,
 )
-from .pick_place_phase import advance_pick_place_event, event_gripper_command, task_phase_from_event
+from .pick_place_phase import (
+    advance_pick_place_event,
+    event_gripper_command,
+    task_phase_from_event,
+)
 from .pseudo_errp import (
     DEFAULT_PSEUDO_ERRP_SOURCES,
     PseudoErrPResult,
     extract_pseudo_errp_aux_flags,
     pseudo_errp_from_observation,
 )
-from .rewards import DEFAULT_REWARD_WEIGHTS, RewardWeights, compute_reward, is_success
+from .strict_task_semantics import (
+    STRICT_TASK_SEMANTICS_SCHEMA,
+    StrictTaskPhaseDecision,
+    StrictTaskSemanticsConfig,
+    StrictTaskSemanticsController,
+    TaskPhysicalEvidence,
+)
+from .rewards import (
+    DEFAULT_ISAAC_FRANKA_DENSE_REWARD_WEIGHTS,
+    DEFAULT_MINIMAL_REWARD_WEIGHTS,
+    DEFAULT_REWARD_WEIGHTS,
+    REWARD_VERSION,
+    SUPPORTED_REWARD_VERSIONS,
+    IsaacFrankaDenseRewardWeights,
+    MinimalEventPotentialRewardWeights,
+    RewardWeights,
+    compute_reward,
+    is_success,
+)
 
 try:
     from v3_chan.dynamic_safety import DynamicSafetyEstimator
 except ImportError:
     from dynamic_safety import DynamicSafetyEstimator
+
+try:
+    from v3_chan.robot_environment_safety import PandaEnvironmentSafetyRuntime
+except ImportError:
+    from robot_environment_safety import PandaEnvironmentSafetyRuntime
 
 try:
     from v3_chan.scene_randomization import (
@@ -67,8 +96,46 @@ except ImportError:
     )
 
 
+EXACT_POSE_ROBOT_RESET_CONTRACT = (
+    "exact_pose_full_dof_q_qd_applied_targets_from_restored_measured_state_"
+    "zero_tolerance_v1"
+)
+
+
 GripperMode = Literal["event", "rule", "policy"]
 ObservationMode = Literal["flat", "dict"]
+
+
+@dataclass(frozen=True)
+class PickPlaceBranchState:
+    schema_version: str
+    robot_joint_positions: np.ndarray
+    robot_joint_velocities: np.ndarray
+    robot_applied_action_state: dict[str, np.ndarray | None] | None
+    cube_states: tuple[dict[str, np.ndarray], ...]
+    place_target_position: np.ndarray
+    place_target_orientation: np.ndarray
+    place_pos: np.ndarray
+    active_cube_index: int
+    step_count: int
+    phase_event: int
+    phase_t: float
+    phase_hold_steps: int
+    gripper_closed: bool
+    yaw: float
+    rng_state: dict[str, Any]
+    last_obs: dict[str, np.ndarray]
+    pseudo_errp_aux_flags: dict[str, float]
+    human_replay_aux_state: dict[str, Any]
+    last_safety_result: Any
+    dynamic_safety_state: dict[str, Any]
+    last_dynamic_safety_sample: Any
+    source_restoration_diagnostics: dict[str, Any]
+    synthetic_human_state: dict[str, Any]
+    human_replay_state: dict[str, Any] | None
+    safety_geometry_state: dict[str, Any]
+    last_physical_safety_diagnostics: Any
+    world_time: float
 
 
 @dataclass
@@ -91,10 +158,22 @@ class PickPlaceEnvConfig:
     release_gate_dist: float | None = None
     release_gate_max_hold: int = 240
     require_release_for_success: bool = False
+    synchronize_advanced_phase_observation: bool = False
+    strict_task_semantics: bool = False
+    strict_place_xy_tolerance_m: float = 0.04
     observation_mode: ObservationMode = "flat"
     seed: int = 11
     render: bool = False
-    reward_weights: RewardWeights = field(default_factory=lambda: DEFAULT_REWARD_WEIGHTS)
+    reward_weights: RewardWeights = field(
+        default_factory=lambda: DEFAULT_REWARD_WEIGHTS
+    )
+    reward_version: str = REWARD_VERSION
+    minimal_reward_weights: MinimalEventPotentialRewardWeights = field(
+        default_factory=lambda: DEFAULT_MINIMAL_REWARD_WEIGHTS
+    )
+    isaac_franka_dense_reward_weights: IsaacFrankaDenseRewardWeights = field(
+        default_factory=lambda: DEFAULT_ISAAC_FRANKA_DENSE_REWARD_WEIGHTS
+    )
     pseudo_errp_enabled: bool = True
     pseudo_errp_sources: tuple[str, ...] = field(
         default_factory=lambda: DEFAULT_PSEUDO_ERRP_SOURCES
@@ -117,6 +196,7 @@ class PickPlaceEnvConfig:
     cbf_prediction_horizon_s: float = 0.15
     cbf_max_prediction_buffer_m: float = 0.08
     cbf_max_joint_speed_rad_s: float = 2.0
+    extended_backup_safety_geometry: bool = False
 
 
 class IsaacPickPlaceEnv:
@@ -145,8 +225,16 @@ class IsaacPickPlaceEnv:
                 f"{self.config.physical_safety_controller!r}; "
                 f"expected one of {PHYSICAL_SAFETY_MODES}"
             )
+        if self.config.reward_version not in SUPPORTED_REWARD_VERSIONS:
+            raise ValueError(
+                f"Unsupported reward version: {self.config.reward_version}"
+            )
         if self.config.rmpflow_human_safety_margin_m < 0.0:
             raise ValueError("rmpflow_human_safety_margin_m must be non-negative")
+        if not isinstance(self.config.strict_task_semantics, bool):
+            raise ValueError("strict_task_semantics must be boolean")
+        if self.config.strict_place_xy_tolerance_m <= 0.0:
+            raise ValueError("strict_place_xy_tolerance_m must be positive")
         self.human_state_fn = human_state_fn
         self.rng = np.random.default_rng(self.config.seed)
 
@@ -175,15 +263,24 @@ class IsaacPickPlaceEnv:
         self.pick_targets = self.cubes[: min(3, len(self.cubes))]
         self.cube_half = self.cube_size / 2.0
         self.cube_center_z = self.table_top_z + self.cube_half
-        self.place_pos = np.array([self.stack_base_xy[0], self.stack_base_xy[1], self.cube_center_z])
+        self.place_pos = np.array(
+            [self.stack_base_xy[0], self.stack_base_xy[1], self.cube_center_z]
+        )
         self.place_target.set_world_pose(position=self.place_pos)
 
         self.robot = add_panda(self.world, base_z=self.table_top_z)
         self.world.reset()
         self.world.play()
-        self.controller = RMPFlowController(name="rl_env_rmpflow_controller", robot_articulation=self.robot)
+        self.controller = RMPFlowController(
+            name="rl_env_rmpflow_controller", robot_articulation=self.robot
+        )
         self.safety_geometry = PandaEndEffectorSafetyRuntime(
             robot_prim_path="/World/Franka"
+        )
+        self.environment_safety = (
+            PandaEnvironmentSafetyRuntime(robot_prim_path="/World/Franka")
+            if self.config.extended_backup_safety_geometry
+            else None
         )
         self.dynamic_safety = DynamicSafetyEstimator()
         self.physics_dt_s = float(self.world.get_physics_dt())
@@ -206,6 +303,17 @@ class IsaacPickPlaceEnv:
         self._last_physical_safety_diagnostics = PhysicalSafetyDiagnostics(
             controller=self._physical_safety_mode
         )
+        self._strict_task_semantics_config = StrictTaskSemanticsConfig(
+            enabled=bool(self.config.strict_task_semantics),
+            place_xy_tolerance_m=float(
+                self.config.strict_place_xy_tolerance_m
+            ),
+        ).validated()
+        self._strict_task_controller = StrictTaskSemanticsController(
+            self._strict_task_semantics_config
+        )
+        self._last_strict_task_decision: StrictTaskPhaseDecision | None = None
+        self._last_gripper_command: str | None = None
         self._rmpflow_human_obstacles: dict[str, Any] = {}
         self._rmpflow_obstacles_registered = False
         self._rmpflow_valid_hand_count = 0
@@ -223,6 +331,7 @@ class IsaacPickPlaceEnv:
         self._pseudo_errp_aux_flags: dict[str, float] = {}
         self._human_replay_aux_state: dict[str, Any] = {}
         self._last_safety_result = None
+        self._last_environment_safety_result = None
         self._last_dynamic_safety_sample = None
         self._source_restoration_diagnostics = _empty_source_restoration_diagnostics()
         self._synthetic_human_active = False
@@ -334,6 +443,15 @@ class IsaacPickPlaceEnv:
                 source.get("robot_initial_joint_positions"),
                 source.get("robot_initial_joint_velocities"),
             )
+            if not robot_restored:
+                raise ValueError("source_robot_state_restore_failed")
+            restoration["robot_reset_exactness"] = (
+                _canonicalize_exact_robot_reset(
+                    self.robot,
+                    source.get("robot_initial_joint_positions"),
+                    source.get("robot_initial_joint_velocities"),
+                )
+            )
         else:
             self.place_target.set_world_pose(position=self.place_pos)
             robot_restored = False
@@ -350,9 +468,7 @@ class IsaacPickPlaceEnv:
         )
         self.active_cube = self.pick_targets[screening_cube_index]
         restoration["screening_cube_index"] = int(screening_cube_index)
-        restoration["screening_cube_name"] = str(
-            getattr(self.active_cube, "name", "")
-        )
+        restoration["screening_cube_name"] = str(getattr(self.active_cube, "name", ""))
         if restoration_mode == "exact_pose":
             verification = _verify_exact_restoration(
                 self.cubes,
@@ -361,9 +477,10 @@ class IsaacPickPlaceEnv:
                 robot_restored=robot_restored,
             )
             source_cube_name = restoration.get("source_cube_name")
-            if source_cube_name and str(source_cube_name) != restoration[
-                "screening_cube_name"
-            ]:
+            if (
+                source_cube_name
+                and str(source_cube_name) != restoration["screening_cube_name"]
+            ):
                 verification["pose_mismatch"] = True
                 reasons = [
                     item
@@ -388,8 +505,12 @@ class IsaacPickPlaceEnv:
         self._reset_synthetic_human()
         self.dynamic_safety.reset()
         self._last_dynamic_safety_sample = None
+        self._last_environment_safety_result = None
 
         obs = self._build_obs()
+        self._reset_strict_task_semantics(obs)
+        if self._strict_task_semantics_enabled():
+            self._write_phase_observation(obs)
         self._last_obs = obs
         errp_result = self._pseudo_errp_result(obs, override_feedback=0.0)
         info = self._info(obs, reward_components={}, errp_result=errp_result)
@@ -401,13 +522,20 @@ class IsaacPickPlaceEnv:
         action: np.ndarray,
         *,
         errp_feedback: float | None = None,
+        advance_task_phase: bool = True,
+        reset_task_phase_after_step: bool = False,
     ) -> tuple[np.ndarray | dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
         if self._last_obs is None:
             raise RuntimeError("reset() must be called before step()")
+        if bool(advance_task_phase) and bool(reset_task_phase_after_step):
+            raise ValueError(
+                "reset_task_phase_after_step requires advance_task_phase=False"
+            )
 
         action = _finite_action(action)
         target_pos, target_quat, self.yaw = self._target_from_action(action)
         gripper_command = self._gripper_command(action, self._last_obs)
+        self._last_gripper_command = gripper_command
 
         if self._curobo_controller is not None:
             arm_action, controller_diagnostics = self._curobo_controller.forward(
@@ -450,18 +578,46 @@ class IsaacPickPlaceEnv:
                     safety_geometry=self.safety_geometry,
                     observation=self._last_obs,
                     physics_dt_s=self.physics_dt_s,
+                    human_valid_mask=self._human_replay_aux_state.get(
+                        "human_valid_mask"
+                    ),
+                    intentional_human_absence=(
+                        _intentional_human_absence_from_aux(
+                            self._human_replay_aux_state
+                        )
+                    ),
                 )
             )
+        gripper_command = self._guard_strict_release_for_current_cbf(
+            gripper_command
+        )
+        self._last_gripper_command = gripper_command
         control_action = self._merge_gripper_action(arm_action, gripper_command)
         self.robot.apply_action(control_action)
         self.world.step(render=self.config.render)
         self.step_count += 1
 
         next_obs = self._build_obs()
-        self._advance_phase(next_obs)
+        phase_control = self._control_task_phase(
+            next_obs,
+            advance=bool(advance_task_phase),
+            reset_for_reentry=bool(reset_task_phase_after_step),
+        )
         success = self._is_success(next_obs)
-        truncated = self.step_count >= self.config.max_episode_steps and not success
-        errp_result = self._pseudo_errp_result(next_obs, override_feedback=errp_feedback)
+        strict_failure = bool(
+            self._strict_task_semantics_enabled()
+            and self._strict_task_controller.state.failure_reason
+        )
+        terminated, truncated = _task_episode_flags(
+            success=success,
+            strict_failure=strict_failure,
+            horizon_reached=(
+                self.step_count >= self.config.max_episode_steps
+            ),
+        )
+        errp_result = self._pseudo_errp_result(
+            next_obs, override_feedback=errp_feedback
+        )
         reward_result = compute_reward(
             self._last_obs,
             next_obs,
@@ -470,6 +626,11 @@ class IsaacPickPlaceEnv:
             success=success,
             success_dist=self.config.success_dist,
             weights=self.config.reward_weights,
+            reward_version=self.config.reward_version,
+            minimal_weights=self.config.minimal_reward_weights,
+            isaac_franka_dense_weights=(
+                self.config.isaac_franka_dense_reward_weights
+            ),
         )
         self._last_obs = next_obs
 
@@ -478,13 +639,211 @@ class IsaacPickPlaceEnv:
             reward_components=reward_result.components,
             errp_result=errp_result,
         )
-        return self._format_obs(next_obs), reward_result.total, success, truncated, info
+        info["task_phase_control"] = phase_control
+        info["task_phase_advanced"] = bool(phase_control["advanced"])
+        info["task_phase_progressed"] = bool(phase_control["phase_changed"])
+        info["task_phase_paused"] = bool(phase_control["paused"])
+        info["task_phase_reentry"] = bool(phase_control["reentry"])
+        return (
+            self._format_obs(next_obs),
+            reward_result.total,
+            terminated,
+            truncated,
+            info,
+        )
+
+    def capture_branch_state(self) -> PickPlaceBranchState:
+        """Capture the state needed for finite-horizon risk-label branches.
+
+        Branching deliberately excludes active RMPflow/CBF/cuRobo shields: labels
+        must describe the candidate task action and the learned backup policy,
+        rather than a third controller's intervention.
+        """
+
+        if self._last_obs is None:
+            raise RuntimeError("reset() must be called before capture_branch_state()")
+        if self._physical_safety_mode != "none":
+            raise RuntimeError(
+                "Risk-label branching requires physical_safety_controller='none'"
+            )
+        replay_state = None
+        if self.human_state_fn is not None:
+            capture_replay = getattr(self.human_state_fn, "capture_state", None)
+            if not callable(capture_replay):
+                raise RuntimeError(
+                    "human_state_fn must implement capture_state() for branching"
+                )
+            replay_state = capture_replay()
+
+        active_cube_index = next(
+            (
+                index
+                for index, cube in enumerate(self.pick_targets)
+                if cube is self.active_cube
+            ),
+            -1,
+        )
+        if active_cube_index < 0:
+            raise RuntimeError("active_cube is not present in pick_targets")
+        target_position, target_orientation = self.place_target.get_world_pose()
+        return PickPlaceBranchState(
+            schema_version="pick_place_branch_state_v1",
+            robot_joint_positions=_required_runtime_vector(
+                self.robot.get_joint_positions(), "robot_joint_positions"
+            ),
+            robot_joint_velocities=_required_runtime_vector(
+                self.robot.get_joint_velocities(), "robot_joint_velocities"
+            ),
+            robot_applied_action_state=_capture_robot_applied_action_state(self.robot),
+            cube_states=tuple(_capture_body_state(cube) for cube in self.cubes),
+            place_target_position=_required_runtime_vector(
+                target_position, "place_target_position", min_size=3
+            )[:3],
+            place_target_orientation=_required_runtime_vector(
+                target_orientation, "place_target_orientation", min_size=4
+            )[:4],
+            place_pos=np.asarray(self.place_pos, dtype=float).copy(),
+            active_cube_index=int(active_cube_index),
+            step_count=int(self.step_count),
+            phase_event=int(self.phase_event),
+            phase_t=float(self.phase_t),
+            phase_hold_steps=int(self.phase_hold_steps),
+            gripper_closed=bool(self.gripper_closed),
+            yaw=float(self.yaw),
+            rng_state=copy.deepcopy(self.rng.bit_generator.state),
+            last_obs=_copy_observation(self._last_obs),
+            pseudo_errp_aux_flags=copy.deepcopy(self._pseudo_errp_aux_flags),
+            human_replay_aux_state=copy.deepcopy(self._human_replay_aux_state),
+            last_safety_result=copy.deepcopy(self._last_safety_result),
+            dynamic_safety_state=copy.deepcopy(self.dynamic_safety.__dict__),
+            last_dynamic_safety_sample=copy.deepcopy(self._last_dynamic_safety_sample),
+            source_restoration_diagnostics=copy.deepcopy(
+                self._source_restoration_diagnostics
+            ),
+            synthetic_human_state={
+                "active": bool(self._synthetic_human_active),
+                "start_step": int(self._synthetic_human_start_step),
+                "duration_steps": int(self._synthetic_human_duration_steps),
+                "side": float(self._synthetic_human_side),
+                "height_offset": float(self._synthetic_human_height_offset),
+            },
+            human_replay_state=copy.deepcopy(replay_state),
+            safety_geometry_state=_capture_safety_geometry_state(self.safety_geometry),
+            last_physical_safety_diagnostics=copy.deepcopy(
+                self._last_physical_safety_diagnostics
+            ),
+            world_time=float(getattr(self.world, "current_time", 0.0)),
+        )
+
+    def refresh_observation(
+        self,
+    ) -> tuple[np.ndarray | dict[str, np.ndarray], dict[str, Any]]:
+        """Rebuild observation/geometry after an explicit state restoration."""
+
+        if self._last_obs is None:
+            raise RuntimeError("reset() must be called before refresh_observation()")
+        self.dynamic_safety.reset()
+        self._last_dynamic_safety_sample = None
+        self.safety_geometry.reset_link_origin_pose_cache()
+        obs = self._build_obs()
+        self._write_phase_observation(obs)
+        self._last_obs = obs
+        errp_result = self._pseudo_errp_result(obs, override_feedback=0.0)
+        info = self._info(obs, reward_components={}, errp_result=errp_result)
+        return self._format_obs(obs), info
+
+    def restore_branch_state(self, state: PickPlaceBranchState) -> dict[str, float]:
+        if state.schema_version != "pick_place_branch_state_v1":
+            raise ValueError(f"Unsupported branch state: {state.schema_version}")
+        if self._physical_safety_mode != "none":
+            raise RuntimeError(
+                "Risk-label branching requires physical_safety_controller='none'"
+            )
+        if len(state.cube_states) != len(self.cubes):
+            raise ValueError("Branch state cube count does not match the environment")
+
+        self.robot.set_joint_positions(state.robot_joint_positions.copy())
+        if hasattr(self.robot, "set_joint_velocities"):
+            self.robot.set_joint_velocities(state.robot_joint_velocities.copy())
+        for cube, cube_state in zip(self.cubes, state.cube_states):
+            _restore_body_state(cube, cube_state)
+        self.place_target.set_world_pose(
+            position=state.place_target_position.copy(),
+            orientation=state.place_target_orientation.copy(),
+        )
+        self.place_pos = state.place_pos.copy()
+        self.active_cube = self.pick_targets[state.active_cube_index]
+
+        if state.human_replay_state is not None:
+            restore_replay = getattr(self.human_state_fn, "restore_state", None)
+            if not callable(restore_replay):
+                raise RuntimeError(
+                    "human_state_fn must implement restore_state() for branching"
+                )
+            restore_replay(copy.deepcopy(state.human_replay_state))
+
+        self.step_count = int(state.step_count)
+        self.phase_event = int(state.phase_event)
+        self.phase_t = float(state.phase_t)
+        self.phase_hold_steps = int(state.phase_hold_steps)
+        self.gripper_closed = bool(state.gripper_closed)
+        self.yaw = float(state.yaw)
+        self.rng.bit_generator.state = copy.deepcopy(state.rng_state)
+        self._last_obs = _copy_observation(state.last_obs)
+        self._pseudo_errp_aux_flags = copy.deepcopy(state.pseudo_errp_aux_flags)
+        self._human_replay_aux_state = copy.deepcopy(state.human_replay_aux_state)
+        self._last_safety_result = copy.deepcopy(state.last_safety_result)
+        self.dynamic_safety.__dict__.clear()
+        self.dynamic_safety.__dict__.update(copy.deepcopy(state.dynamic_safety_state))
+        self._last_dynamic_safety_sample = copy.deepcopy(
+            state.last_dynamic_safety_sample
+        )
+        self._source_restoration_diagnostics = copy.deepcopy(
+            state.source_restoration_diagnostics
+        )
+        self._synthetic_human_active = bool(state.synthetic_human_state["active"])
+        self._synthetic_human_start_step = int(
+            state.synthetic_human_state["start_step"]
+        )
+        self._synthetic_human_duration_steps = int(
+            state.synthetic_human_state["duration_steps"]
+        )
+        self._synthetic_human_side = float(state.synthetic_human_state["side"])
+        self._synthetic_human_height_offset = float(
+            state.synthetic_human_state["height_offset"]
+        )
+        self._last_physical_safety_diagnostics = copy.deepcopy(
+            state.last_physical_safety_diagnostics
+        )
+        self.controller.reset()
+        _restore_robot_applied_action_state(
+            self.robot,
+            state.robot_applied_action_state,
+        )
+        self.safety_geometry.reset_link_origin_pose_cache()
+        _restore_safety_geometry_state(
+            self.safety_geometry, state.safety_geometry_state
+        )
+
+        current_world_time = float(getattr(self.world, "current_time", 0.0))
+        return {
+            "captured_world_time": float(state.world_time),
+            "restored_world_time": current_world_time,
+            "world_time_advance_s": max(
+                0.0, current_world_time - float(state.world_time)
+            ),
+        }
 
     def close(self) -> None:
         self.world.stop()
 
     def _build_obs(self) -> dict[str, np.ndarray]:
-        gripper_center = _gripper_center_from_fingers(self.robot)
+        finger_positions = _gripper_finger_world_positions(self.robot)
+        gripper_center = (
+            None
+            if finger_positions is None
+            else (finger_positions[0] + finger_positions[1]) * 0.5
+        )
         ee_pos = None
         try:
             ee_pos, _ = self.robot.end_effector.get_world_pose()
@@ -511,19 +870,30 @@ class IsaacPickPlaceEnv:
                 ee_pos=ee_pos,
                 playback_time_s=float(self.step_count) * self.physics_dt_s,
             )
-        human_state = dict(self.human_state_fn() if self.human_state_fn is not None else {})
+        human_state = dict(
+            self.human_state_fn() if self.human_state_fn is not None else {}
+        )
         synthetic_state = self._synthetic_human_state(gripper_center)
         human_state = {**synthetic_state, **human_state}
         self._update_rmpflow_human_obstacles(human_state)
         if self._curobo_controller is not None:
             self._curobo_controller.update_human_obstacles(human_state)
-        human_state, self._pseudo_errp_aux_flags = extract_pseudo_errp_aux_flags(human_state)
-        human_state, self._human_replay_aux_state = _split_observation_human_state(human_state)
+        human_state, self._pseudo_errp_aux_flags = extract_pseudo_errp_aux_flags(
+            human_state
+        )
+        human_state, self._human_replay_aux_state = _split_observation_human_state(
+            human_state
+        )
         safety_result = self.safety_geometry.evaluate(
             human_state.get("human_left_hand_pos"),
             human_state.get("human_right_hand_pos"),
         )
         self._last_safety_result = safety_result
+        self._last_environment_safety_result = (
+            None
+            if self.environment_safety is None
+            else self.environment_safety.evaluate()
+        )
         dynamic_sample = self._update_dynamic_safety(
             safety_result,
             human_state.get("human_left_hand_pos"),
@@ -557,6 +927,14 @@ class IsaacPickPlaceEnv:
             controller_t=self.phase_t,
             **human_state,
         )
+        if finger_positions is not None:
+            cube_position = np.asarray(obs["cube_pos"], dtype=float).reshape(-1)[:3]
+            obs["_reward_isaac_franka_left_finger_to_cube"] = (
+                cube_position - finger_positions[0]
+            ).astype(np.float32)
+            obs["_reward_isaac_franka_right_finger_to_cube"] = (
+                cube_position - finger_positions[1]
+            ).astype(np.float32)
         apply_dynamic_hri_observation(
             obs,
             {
@@ -578,8 +956,8 @@ class IsaacPickPlaceEnv:
         left_origin, left_orientation, _ = self.safety_geometry.closest_link_world_pose(
             safety_result.left
         )
-        right_origin, right_orientation, _ = self.safety_geometry.closest_link_world_pose(
-            safety_result.right
+        right_origin, right_orientation, _ = (
+            self.safety_geometry.closest_link_world_pose(safety_result.right)
         )
         _, left_angular_velocity, _ = self.safety_geometry.closest_link_world_velocity(
             safety_result.left
@@ -587,13 +965,17 @@ class IsaacPickPlaceEnv:
         _, right_angular_velocity, _ = self.safety_geometry.closest_link_world_velocity(
             safety_result.right
         )
-        left_surface_point, _ = self.safety_geometry.closest_surface_point_world_position(
-            safety_result.left,
-            left_hand_pos,
+        left_surface_point, _ = (
+            self.safety_geometry.closest_surface_point_world_position(
+                safety_result.left,
+                left_hand_pos,
+            )
         )
-        right_surface_point, _ = self.safety_geometry.closest_surface_point_world_position(
-            safety_result.right,
-            right_hand_pos,
+        right_surface_point, _ = (
+            self.safety_geometry.closest_surface_point_world_position(
+                safety_result.right,
+                right_hand_pos,
+            )
         )
         return self.dynamic_safety.update(
             sim_time_s=float(self.step_count) * self.physics_dt_s,
@@ -621,9 +1003,27 @@ class IsaacPickPlaceEnv:
         from omni.isaac.core.objects import VisualSphere
 
         specs = (
-            ("head", "/World/HumanReplay/head", "human_replay_head", 0.045, np.array([0.8, 0.8, 0.8])),
-            ("left", "/World/HumanReplay/left_hand", "human_replay_left_hand", 0.035, np.array([0.45, 0.65, 1.0])),
-            ("right", "/World/HumanReplay/right_hand", "human_replay_right_hand", 0.035, np.array([1.0, 0.55, 0.25])),
+            (
+                "head",
+                "/World/HumanReplay/head",
+                "human_replay_head",
+                0.045,
+                np.array([0.8, 0.8, 0.8]),
+            ),
+            (
+                "left",
+                "/World/HumanReplay/left_hand",
+                "human_replay_left_hand",
+                0.035,
+                np.array([0.45, 0.65, 1.0]),
+            ),
+            (
+                "right",
+                "/World/HumanReplay/right_hand",
+                "human_replay_right_hand",
+                0.035,
+                np.array([1.0, 0.55, 0.25]),
+            ),
         )
         parked = np.array([0.0, 0.0, -10.0], dtype=float)
         for key, prim_path, name, radius, color in specs:
@@ -723,7 +1123,11 @@ class IsaacPickPlaceEnv:
             if prim is None:
                 continue
             pos = np.asarray(obs.get(field_name, parked), dtype=float).reshape(-1)
-            if pos.size < 3 or not np.all(np.isfinite(pos[:3])) or np.linalg.norm(pos[:3]) < 1e-6:
+            if (
+                pos.size < 3
+                or not np.all(np.isfinite(pos[:3]))
+                or np.linalg.norm(pos[:3]) < 1e-6
+            ):
                 pos = parked
             else:
                 pos = pos[:3].copy()
@@ -732,17 +1136,20 @@ class IsaacPickPlaceEnv:
 
     def _reset_synthetic_human(self) -> None:
         cfg = self.config
-        self._synthetic_human_active = (
-            bool(cfg.synthetic_human_enabled)
-            and float(self.rng.random()) < float(np.clip(cfg.synthetic_human_episode_prob, 0.0, 1.0))
-        )
+        self._synthetic_human_active = bool(cfg.synthetic_human_enabled) and float(
+            self.rng.random()
+        ) < float(np.clip(cfg.synthetic_human_episode_prob, 0.0, 1.0))
         start_min = max(0, int(cfg.synthetic_human_start_min_step))
         start_max = max(start_min, int(cfg.synthetic_human_start_max_step))
         if start_max > start_min:
-            self._synthetic_human_start_step = int(self.rng.integers(start_min, start_max + 1))
+            self._synthetic_human_start_step = int(
+                self.rng.integers(start_min, start_max + 1)
+            )
         else:
             self._synthetic_human_start_step = start_min
-        self._synthetic_human_duration_steps = max(1, int(cfg.synthetic_human_duration_steps))
+        self._synthetic_human_duration_steps = max(
+            1, int(cfg.synthetic_human_duration_steps)
+        )
         self._synthetic_human_side = -1.0 if float(self.rng.random()) < 0.5 else 1.0
         self._synthetic_human_height_offset = float(self.rng.uniform(-0.025, 0.055))
 
@@ -768,12 +1175,18 @@ class IsaacPickPlaceEnv:
         # Sweep the hand across the gripper. The midpoint is closest, so some
         # episodes produce only proximity feedback while others produce collision
         # feedback depending on the randomized height offset.
-        lateral = self._synthetic_human_side * np.interp(progress, [0.0, 1.0], [near_dist * 1.8, -near_dist * 1.8])
+        lateral = self._synthetic_human_side * np.interp(
+            progress, [0.0, 1.0], [near_dist * 1.8, -near_dist * 1.8]
+        )
         closest = min_dist + abs(self._synthetic_human_height_offset) * 0.35
         vertical = self._synthetic_human_height_offset
         forward = closest * np.sin(np.pi * progress)
-        right_hand = gripper_center + np.array([lateral, forward, vertical], dtype=float)
-        left_hand = right_hand + np.array([0.22 * self._synthetic_human_side, -0.18, 0.02], dtype=float)
+        right_hand = gripper_center + np.array(
+            [lateral, forward, vertical], dtype=float
+        )
+        left_hand = right_hand + np.array(
+            [0.22 * self._synthetic_human_side, -0.18, 0.02], dtype=float
+        )
         head = right_hand + np.array([0.0, -0.55, 0.55], dtype=float)
 
         dist = float(np.linalg.norm(right_hand - gripper_center))
@@ -784,12 +1197,16 @@ class IsaacPickPlaceEnv:
             "min_hand_gripper_dist_override": dist,
         }
 
-    def _format_obs(self, obs: dict[str, np.ndarray]) -> np.ndarray | dict[str, np.ndarray]:
+    def _format_obs(
+        self, obs: dict[str, np.ndarray]
+    ) -> np.ndarray | dict[str, np.ndarray]:
         if self.config.observation_mode == "dict":
             return obs
         return flatten_observation(obs)
 
-    def _target_from_action(self, action: np.ndarray) -> tuple[np.ndarray, np.ndarray | None, float]:
+    def _target_from_action(
+        self, action: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray | None, float]:
         ee_pos = np.asarray(self._last_obs["ee_pos"], dtype=float)
         if self.config.action_version == CONTROLLER_TARGET_ACTION_VERSION:
             target_pos = controller_target_from_action(
@@ -798,26 +1215,113 @@ class IsaacPickPlaceEnv:
                 action_scale=self.config.action_scale,
             )
         else:
-            target_pos = ee_pos + np.asarray(action[:3], dtype=float) * MAX_EE_DELTA_M * self.config.action_scale
+            target_pos = (
+                ee_pos
+                + np.asarray(action[:3], dtype=float)
+                * MAX_EE_DELTA_M
+                * self.config.action_scale
+            )
         current_yaw = self.yaw if np.isfinite(self.yaw) else 0.0
-        next_yaw = float(current_yaw + float(action[3]) * MAX_YAW_DELTA_RAD * self.config.action_scale)
+        next_yaw = float(
+            current_yaw
+            + float(action[3]) * MAX_YAW_DELTA_RAD * self.config.action_scale
+        )
         if not np.isfinite(next_yaw):
             next_yaw = 0.0
         target_pos = np.array(
             [
                 np.clip(target_pos[0], 0.20, 0.75),
                 np.clip(target_pos[1], -0.35, 0.35),
-                np.clip(target_pos[2], self.table_top_z + 0.035, self.table_top_z + 0.50),
+                np.clip(
+                    target_pos[2], self.table_top_z + 0.035, self.table_top_z + 0.50
+                ),
             ],
             dtype=float,
         )
         target_quat = None
         if self.config.fixed_orientation:
-            target_quat = _safe_quat(self._euler_angles_to_quat(np.array([0.0, np.pi, next_yaw])))
+            target_quat = _safe_quat(
+                self._euler_angles_to_quat(np.array([0.0, np.pi, next_yaw]))
+            )
         return target_pos, target_quat, next_yaw
 
-    def _gripper_command(self, action: np.ndarray, obs: dict[str, np.ndarray]) -> str | None:
+    def _reset_strict_task_semantics(
+        self, obs: Mapping[str, np.ndarray]
+    ) -> None:
+        cube_pos = np.asarray(obs["cube_pos"], dtype=float).reshape(-1)
+        if cube_pos.size < 3 or not np.all(np.isfinite(cube_pos[:3])):
+            raise RuntimeError(
+                "Strict task semantics requires a finite cube position"
+            )
+        self._strict_task_controller.reset(
+            initial_cube_z_m=float(cube_pos[2])
+        )
+        self._last_strict_task_decision = None
+        self._last_gripper_command = None
+
+    def _strict_task_semantics_enabled(self) -> bool:
+        return bool(
+            getattr(getattr(self, "config", None), "strict_task_semantics", False)
+        )
+
+    def _strict_task_evidence(
+        self, obs: Mapping[str, np.ndarray]
+    ) -> TaskPhysicalEvidence:
+        cube_to_target = np.asarray(
+            obs["cube_to_place_target"], dtype=float
+        ).reshape(-1)
+        cube_pos = np.asarray(obs["cube_pos"], dtype=float).reshape(-1)
+        cube_velocity = np.asarray(
+            obs["cube_lin_vel"], dtype=float
+        ).reshape(-1)
+        if (
+            cube_to_target.size < 3
+            or cube_pos.size < 3
+            or cube_velocity.size < 3
+        ):
+            raise RuntimeError(
+                "Strict task semantics requires three-dimensional cube state"
+            )
+        return TaskPhysicalEvidence(
+            ee_cube_distance_m=float(
+                np.linalg.norm(np.asarray(obs["ee_to_cube"], dtype=float))
+            ),
+            cube_target_xy_error_m=float(
+                np.linalg.norm(cube_to_target[:2])
+            ),
+            cube_target_z_error_m=float(abs(cube_to_target[2])),
+            cube_speed_mps=float(np.linalg.norm(cube_velocity[:3])),
+            cube_z_m=max(0.0, float(cube_pos[2])),
+            grasp_candidate=bool(
+                float(np.asarray(obs["has_grasped_cube"]).reshape(-1)[0])
+                > 0.5
+            ),
+            cbf_intervention_norm_radps=max(
+                0.0,
+                float(
+                    self._last_physical_safety_diagnostics.intervention_norm_radps
+                ),
+            ),
+        )
+
+    def _gripper_command(
+        self, action: np.ndarray, obs: dict[str, np.ndarray]
+    ) -> str | None:
         if self.config.gripper_mode == "event":
+            if self._strict_task_semantics_enabled():
+                if self._strict_task_controller.consume_pending_retry_open():
+                    self.gripper_closed = False
+                    return "open"
+                if self.phase_event == 3:
+                    self.gripper_closed = True
+                    return "close"
+                if (
+                    self.phase_event == 7
+                    and self._strict_task_controller.release_command_allowed()
+                ):
+                    self.gripper_closed = False
+                    return "open"
+                return None
             if (
                 self.config.early_close_on_grasp_gate
                 and self.phase_event in (1, 2)
@@ -835,7 +1339,9 @@ class IsaacPickPlaceEnv:
                     self.phase_hold_steps = 0
                 self.gripper_closed = True
                 return "close"
-            self.gripper_closed = event_gripper_command(self.phase_event, self.gripper_closed)
+            self.gripper_closed = event_gripper_command(
+                self.phase_event, self.gripper_closed
+            )
             if self.phase_event == 3:
                 return "close"
             if self.phase_event == 7:
@@ -851,7 +1357,9 @@ class IsaacPickPlaceEnv:
                 release_dist=self.config.release_dist,
             )
         elif self.config.gripper_mode == "policy":
-            self.gripper_closed = _policy_gripper_should_close(action, self.gripper_closed)
+            self.gripper_closed = _policy_gripper_should_close(
+                action, self.gripper_closed
+            )
         else:
             raise ValueError(f"Unknown gripper_mode: {self.config.gripper_mode}")
 
@@ -866,8 +1374,81 @@ class IsaacPickPlaceEnv:
             return arm_action
         return self.robot.gripper.forward(action=gripper_command)
 
+    def _guard_strict_release_for_current_cbf(
+        self, gripper_command: str | None
+    ) -> str | None:
+        """Prevent an event-7 release on the step that first activates CBF.
+
+        The strict phase controller observes the current physical-safety
+        diagnostic after physics advances.  Without this apply-time guard, an
+        ``open`` command selected from the previous observation can therefore
+        escape one step before the CBF hold is latched.
+        """
+
+        if (
+            not self._strict_task_semantics_enabled()
+            or int(self.phase_event) != 7
+            or gripper_command != "open"
+        ):
+            return gripper_command
+        intervention = max(
+            0.0,
+            float(
+                self._last_physical_safety_diagnostics.intervention_norm_radps
+            ),
+        )
+        if intervention < float(
+            self._strict_task_semantics_config.cbf_pause_enter_norm_radps
+        ):
+            return gripper_command
+        has_grasped = bool(
+            self._last_obs is not None
+            and float(
+                np.asarray(self._last_obs["has_grasped_cube"]).reshape(-1)[0]
+            )
+            > 0.5
+        )
+        if not has_grasped:
+            return gripper_command
+        self.gripper_closed = True
+        return None
+
     def _advance_phase(self, obs: dict[str, np.ndarray]) -> None:
-        next_event, next_t = advance_pick_place_event(self.phase_event, self.phase_t)
+        self._advance_phase_with_events(obs)
+
+    def _advance_phase_with_events(
+        self,
+        obs: dict[str, np.ndarray],
+        events_dt: tuple[float, ...] | None = None,
+    ) -> None:
+        if events_dt is None:
+            next_event, next_t = advance_pick_place_event(
+                self.phase_event, self.phase_t
+            )
+            terminal_event = 10
+        else:
+            next_event, next_t = advance_pick_place_event(
+                self.phase_event, self.phase_t, events_dt
+            )
+            terminal_event = len(events_dt)
+        if self._strict_task_semantics_enabled():
+            decision = self._strict_task_controller.update(
+                event=int(self.phase_event),
+                progress=float(self.phase_t),
+                proposed_event=int(next_event),
+                proposed_progress=float(next_t),
+                terminal_event=int(terminal_event),
+                evidence=self._strict_task_evidence(obs),
+            )
+            previous_event = int(self.phase_event)
+            self.phase_event = int(decision.event)
+            self.phase_t = float(decision.progress)
+            if decision.held:
+                self.phase_hold_steps += 1
+            elif int(self.phase_event) != previous_event:
+                self.phase_hold_steps = 0
+            self._last_strict_task_decision = decision
+            return
         ee_cube_dist = float(np.linalg.norm(obs["ee_to_cube"]))
         cube_target_dist = float(np.linalg.norm(obs["cube_to_place_target"]))
         hold_lowering_for_grasp = (
@@ -893,6 +1474,107 @@ class IsaacPickPlaceEnv:
             self.phase_hold_steps = 0
         self.phase_event, self.phase_t = next_event, next_t
 
+    def _control_task_phase(
+        self,
+        obs: dict[str, np.ndarray],
+        *,
+        advance: bool,
+        reset_for_reentry: bool,
+    ) -> dict[str, Any]:
+        event_before = int(self.phase_event)
+        t_before = float(self.phase_t)
+        reason = "paused"
+        if reset_for_reentry:
+            reason = self._synchronize_task_phase_for_reentry(obs)
+            self._write_phase_observation(obs)
+        elif advance:
+            self._advance_phase(obs)
+            if bool(
+                self._strict_task_semantics_enabled()
+                or
+                getattr(
+                    self.config,
+                    "synchronize_advanced_phase_observation",
+                    False,
+                )
+            ):
+                self._write_phase_observation(obs)
+            reason = (
+                self._last_strict_task_decision.reason
+                if self._strict_task_semantics_enabled()
+                and getattr(self, "_last_strict_task_decision", None) is not None
+                else "advanced"
+            )
+        strict_decision = getattr(self, "_last_strict_task_decision", None)
+        internally_held = bool(
+            self._strict_task_semantics_enabled()
+            and advance
+            and strict_decision is not None
+            and strict_decision.held
+        )
+        internal_reentry = bool(
+            self._strict_task_semantics_enabled()
+            and advance
+            and strict_decision is not None
+            and strict_decision.reentry
+        )
+        return {
+            "advanced": bool(advance),
+            "paused": bool(not advance or internally_held),
+            "reentry": bool(reset_for_reentry or internal_reentry),
+            "reason": reason,
+            "event_before": event_before,
+            "event_after": int(self.phase_event),
+            "controller_t_before": t_before,
+            "controller_t_after": float(self.phase_t),
+            "phase_changed": bool(
+                int(self.phase_event) != event_before
+                or not np.isclose(float(self.phase_t), t_before)
+            ),
+        }
+
+    def _synchronize_task_phase_for_reentry(
+        self,
+        obs: dict[str, np.ndarray],
+    ) -> str:
+        has_grasped = bool(
+            float(np.asarray(obs["has_grasped_cube"]).reshape(-1)[0]) > 0.5
+        )
+        cube_target_dist = float(np.linalg.norm(obs["cube_to_place_target"]))
+        reason = "resume_paused_event"
+        if (
+            self.phase_event >= 4
+            and not has_grasped
+            and cube_target_dist > float(self.config.success_dist)
+        ):
+            self.phase_event = 0
+            self.phase_t = 0.0
+            self.phase_hold_steps = 0
+            reason = "rewind_missing_grasp"
+        elif self.phase_event >= 7 and has_grasped:
+            self.phase_event = 5
+            self.phase_t = 0.0
+            self.phase_hold_steps = 0
+            reason = "reposition_still_grasped"
+        elif (
+            self.phase_event == 6
+            and has_grasped
+            and cube_target_dist
+            > max(float(self.config.success_dist), float(self.config.release_dist))
+        ):
+            self.phase_event = 5
+            self.phase_t = 0.0
+            self.phase_hold_steps = 0
+            reason = "reposition_before_release"
+        return reason
+
+    def _write_phase_observation(self, obs: dict[str, np.ndarray]) -> None:
+        obs["task_phase"] = task_phase_onehot(task_phase_from_event(self.phase_event))
+        obs["controller_event"] = controller_event_onehot(self.phase_event)
+        obs["controller_t"] = np.array(
+            [np.clip(float(self.phase_t), 0.0, 1.0)], dtype=np.float32
+        )
+
     def _pseudo_errp_result(
         self,
         obs: dict[str, np.ndarray],
@@ -908,11 +1590,15 @@ class IsaacPickPlaceEnv:
         )
 
     def _is_success(self, obs: dict[str, np.ndarray]) -> bool:
+        if self._strict_task_semantics_enabled():
+            return bool(self._strict_task_controller.state.success_latched)
         if not is_success(obs, threshold_m=self.config.success_dist):
             return False
         if not self.config.require_release_for_success:
             return True
-        has_grasped = bool(float(np.asarray(obs["has_grasped_cube"]).reshape(-1)[0]) > 0.5)
+        has_grasped = bool(
+            float(np.asarray(obs["has_grasped_cube"]).reshape(-1)[0]) > 0.5
+        )
         return self.phase_event >= 7 and not has_grasped
 
     def _info(
@@ -923,7 +1609,54 @@ class IsaacPickPlaceEnv:
         errp_result: PseudoErrPResult,
     ) -> dict[str, Any]:
         physical_safety = self._last_physical_safety_diagnostics.as_dict()
+        dynamic_safety = (
+            {}
+            if self._last_dynamic_safety_sample is None
+            else {
+                **self._last_dynamic_safety_sample.human_payload(),
+                **self._last_dynamic_safety_sample.safety_payload(),
+            }
+        )
+        environment_safety = self._last_environment_safety_result
+        static_result = (
+            None if environment_safety is None else environment_safety.static
+        )
+        self_result = (
+            None if environment_safety is None else environment_safety.self_collision
+        )
+        strict_state = self._strict_task_controller.state.as_dict()
+        strict_decision = (
+            None
+            if self._last_strict_task_decision is None
+            else {
+                "event": int(self._last_strict_task_decision.event),
+                "progress": float(self._last_strict_task_decision.progress),
+                "reason": str(self._last_strict_task_decision.reason),
+                "phase_changed": bool(
+                    self._last_strict_task_decision.phase_changed
+                ),
+                "held": bool(self._last_strict_task_decision.held),
+                "retry_started": bool(
+                    self._last_strict_task_decision.retry_started
+                ),
+                "reentry": bool(self._last_strict_task_decision.reentry),
+                "success_latched": bool(
+                    self._last_strict_task_decision.success_latched
+                ),
+                "failure_reason": str(
+                    self._last_strict_task_decision.failure_reason
+                ),
+            }
+        )
+        task_terminal_reason = ""
+        if bool(strict_state["success_latched"]):
+            task_terminal_reason = "success"
+        elif str(strict_state["failure_reason"]):
+            task_terminal_reason = str(strict_state["failure_reason"])
+        elif self.step_count >= int(self.config.max_episode_steps):
+            task_terminal_reason = "max_episode_steps"
         return {
+            "reward_version": str(self.config.reward_version),
             "episode_index": self.current_episode_index,
             "step": self.step_count,
             "sim_time": float(getattr(self.world, "current_time", 0.0)),
@@ -932,10 +1665,20 @@ class IsaacPickPlaceEnv:
             "controller_t": float(self.phase_t),
             "phase_hold_steps": int(self.phase_hold_steps),
             "gripper_closed": bool(self.gripper_closed),
+            "gripper_command": self._last_gripper_command,
             "success": self._is_success(obs),
             "cube_target_dist": float(np.linalg.norm(obs["cube_to_place_target"])),
             "ee_cube_dist": float(np.linalg.norm(obs["ee_to_cube"])),
             "has_grasped_cube": bool(float(obs["has_grasped_cube"][0]) > 0.5),
+            "grasp_candidate": bool(float(obs["has_grasped_cube"][0]) > 0.5),
+            "task_terminal_reason": task_terminal_reason,
+            "strict_task_semantics": {
+                "schema_version": STRICT_TASK_SEMANTICS_SCHEMA,
+                "enabled": self._strict_task_semantics_enabled(),
+                "config": self._strict_task_semantics_config.as_dict(),
+                "state": strict_state,
+                "last_decision": strict_decision,
+            },
             "errp_feedback": float(errp_result.feedback),
             "errp_uncertainty": float(errp_result.uncertainty),
             "errp_label": int(errp_result.label),
@@ -945,6 +1688,24 @@ class IsaacPickPlaceEnv:
             "pseudo_errp_source_scores": dict(errp_result.source_scores),
             "source_restoration": dict(self._source_restoration_diagnostics),
             "human_replay_aux_state": dict(self._human_replay_aux_state),
+            # Action provenance comes from the pre-action CBF diagnostics.
+            # The aux state already belongs to the next policy observation,
+            # because _build_obs() runs before _info() on environment steps.
+            "intentional_human_absence": _intentional_human_absence_from_aux(
+                {
+                    "intentional_human_absence": getattr(
+                        self._last_physical_safety_diagnostics,
+                        "intentional_human_absence",
+                        False,
+                    )
+                }
+            ),
+            "next_observation_intentional_human_absence": (
+                _intentional_human_absence_from_aux(
+                    self._human_replay_aux_state
+                )
+            ),
+            "dynamic_safety": dynamic_safety,
             "human_robot_collision": bool(float(obs["human_robot_collision"][0]) > 0.5),
             "near_human": bool(float(obs["near_human"][0]) > 0.5),
             "near_miss": bool(float(obs["near_miss"][0]) > 0.5),
@@ -953,6 +1714,64 @@ class IsaacPickPlaceEnv:
             ),
             "distance_gate": float(obs["distance_gate"][0]),
             "geometry_valid": bool(float(obs["geometry_valid"][0]) > 0.5),
+            "static_surface_gap_m": (
+                10.0 if static_result is None else float(static_result.surface_gap_m)
+            ),
+            "static_collision": (
+                False if static_result is None else bool(static_result.collision)
+            ),
+            "static_gap_valid": (
+                False if static_result is None else bool(static_result.geometry_valid)
+            ),
+            "static_collision_valid": (
+                False if static_result is None else bool(static_result.collision_valid)
+            ),
+            "static_geometry_valid": (
+                False
+                if static_result is None
+                else bool(
+                    static_result.geometry_valid and static_result.collision_valid
+                )
+            ),
+            "self_surface_gap_m": (
+                10.0 if self_result is None else float(self_result.surface_gap_m)
+            ),
+            "self_collision": (
+                False if self_result is None else bool(self_result.collision)
+            ),
+            "self_gap_valid": (
+                False if self_result is None else bool(self_result.geometry_valid)
+            ),
+            "self_collision_valid": (
+                False if self_result is None else bool(self_result.collision_valid)
+            ),
+            "self_geometry_valid": (
+                False
+                if self_result is None
+                else bool(self_result.geometry_valid and self_result.collision_valid)
+            ),
+            "combined_safety_collision": bool(
+                bool(float(obs["human_robot_collision"][0]) > 0.5)
+                or (static_result is not None and static_result.collision)
+                or (self_result is not None and self_result.collision)
+            ),
+            "static_closest_robot_collider": (
+                "" if static_result is None else static_result.first_path
+            ),
+            "static_closest_environment_collider": (
+                "" if static_result is None else static_result.second_path
+            ),
+            "self_closest_first_collider": (
+                "" if self_result is None else self_result.first_path
+            ),
+            "self_closest_second_collider": (
+                "" if self_result is None else self_result.second_path
+            ),
+            "environment_safety_query_time_ms": (
+                0.0
+                if environment_safety is None
+                else float(environment_safety.query_time_ms)
+            ),
             "left_end_effector_surface_gap_m": (
                 self._last_safety_result.left.surface_gap_m
                 if self._last_safety_result is not None
@@ -1051,11 +1870,22 @@ class IsaacPickPlaceEnv:
                 physical_safety["intervention_norm_radps"]
             ),
             "physical_safety_slack_radps": float(physical_safety["slack_radps"]),
-            "physical_safety_feasible": bool(physical_safety["feasible"]),
-            "physical_safety_status": str(physical_safety["status"]),
-            "physical_safety_solve_time_ms": float(
-                physical_safety["solve_time_ms"]
+            "physical_safety_slack_mps": float(physical_safety["slack_mps"]),
+            "physical_safety_max_constraint_violation_before_mps": float(
+                physical_safety["max_constraint_violation_before_mps"]
             ),
+            "physical_safety_max_constraint_violation_after_mps": float(
+                physical_safety["max_constraint_violation_after_mps"]
+            ),
+            "physical_safety_feasible": bool(physical_safety["feasible"]),
+            "physical_safety_fallback_applied": bool(
+                physical_safety["fallback_applied"]
+            ),
+            "physical_safety_failure_reasons": tuple(
+                physical_safety["failure_reasons"]
+            ),
+            "physical_safety_status": str(physical_safety["status"]),
+            "physical_safety_solve_time_ms": float(physical_safety["solve_time_ms"]),
             "rmpflow_valid_hand_obstacles": int(self._rmpflow_valid_hand_count),
             "safety_query_time_ms": (
                 self._last_safety_result.left.query_time_ms
@@ -1126,6 +1956,148 @@ def _finite_joint_vector(value: Any) -> np.ndarray | None:
     return result
 
 
+def _required_runtime_vector(
+    value: Any,
+    name: str,
+    *,
+    min_size: int = 1,
+) -> np.ndarray:
+    result = np.asarray(value, dtype=float).reshape(-1)
+    if result.size < int(min_size) or not np.all(np.isfinite(result)):
+        raise RuntimeError(f"Cannot capture finite {name}")
+    return result.copy()
+
+
+def _optional_applied_action_vector(value: Any) -> np.ndarray | None:
+    if value is None:
+        return None
+    return _required_runtime_vector(value, "robot_applied_action")
+
+
+def _capture_robot_applied_action_state(
+    robot,
+) -> dict[str, np.ndarray | None] | None:
+    """Capture articulation drive targets in addition to measured q/qd.
+
+    Isaac's ``set_joint_positions`` and ``set_joint_velocities`` restore the
+    measured articulation state, but not the drive targets left by the last
+    partial ``ArticulationAction``.  That distinction matters here because a
+    gripper-only action intentionally leaves the arm targets unchanged, and an
+    arm-only action leaves the finger targets unchanged.
+    """
+
+    getter = getattr(robot, "get_applied_action", None)
+    if not callable(getter):
+        return None
+    action = getter()
+    if action is None:
+        return None
+    return {
+        "joint_positions": _optional_applied_action_vector(
+            getattr(action, "joint_positions", None)
+        ),
+        "joint_velocities": _optional_applied_action_vector(
+            getattr(action, "joint_velocities", None)
+        ),
+        "joint_efforts": _optional_applied_action_vector(
+            getattr(action, "joint_efforts", None)
+        ),
+    }
+
+
+def _restore_robot_applied_action_state(
+    robot,
+    state: dict[str, np.ndarray | None] | None,
+) -> None:
+    if state is None:
+        return
+    current_getter = getattr(robot, "get_applied_action", None)
+    current_action = current_getter() if callable(current_getter) else None
+    action_type = type(current_action) if current_action is not None else None
+    if action_type is None:
+        try:
+            from isaacsim.core.utils.types import ArticulationAction
+        except ImportError:
+            from omni.isaac.core.utils.types import ArticulationAction
+
+        action_type = ArticulationAction
+    kwargs = {
+        name: (
+            None
+            if state.get(name) is None
+            else np.asarray(state[name], dtype=float).copy()
+        )
+        for name in ("joint_positions", "joint_velocities", "joint_efforts")
+    }
+    robot.apply_action(action_type(**kwargs))
+
+
+def _optional_body_velocity(body, getter_name: str) -> np.ndarray:
+    getter = getattr(body, getter_name, None)
+    if not callable(getter):
+        return np.zeros(3, dtype=float)
+    try:
+        return _required_runtime_vector(getter(), getter_name, min_size=3)[:3]
+    except Exception:
+        return np.zeros(3, dtype=float)
+
+
+def _capture_body_state(body) -> dict[str, np.ndarray]:
+    position, orientation = body.get_world_pose()
+    return {
+        "position": _required_runtime_vector(position, "body_position", min_size=3)[:3],
+        "orientation": _required_runtime_vector(
+            orientation, "body_orientation", min_size=4
+        )[:4],
+        "linear_velocity": _optional_body_velocity(body, "get_linear_velocity"),
+        "angular_velocity": _optional_body_velocity(body, "get_angular_velocity"),
+    }
+
+
+def _restore_body_state(body, state: dict[str, np.ndarray]) -> None:
+    body.set_world_pose(
+        position=np.asarray(state["position"], dtype=float).copy(),
+        orientation=np.asarray(state["orientation"], dtype=float).copy(),
+    )
+    if hasattr(body, "set_linear_velocity"):
+        body.set_linear_velocity(
+            np.asarray(state["linear_velocity"], dtype=float).copy()
+        )
+    if hasattr(body, "set_angular_velocity"):
+        body.set_angular_velocity(
+            np.asarray(state["angular_velocity"], dtype=float).copy()
+        )
+
+
+def _copy_observation(obs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    return {name: np.asarray(value).copy() for name, value in obs.items()}
+
+
+def _capture_safety_geometry_state(safety_geometry) -> dict[str, Any]:
+    return {
+        "previous_closest_collider": copy.deepcopy(
+            getattr(safety_geometry, "_previous_closest_collider", {})
+        ),
+        "last_debug_state": copy.deepcopy(
+            getattr(safety_geometry, "_last_debug_state", {})
+        ),
+    }
+
+
+def _restore_safety_geometry_state(
+    safety_geometry,
+    state: dict[str, Any],
+) -> None:
+    if hasattr(safety_geometry, "_previous_closest_collider"):
+        safety_geometry._previous_closest_collider = copy.deepcopy(
+            state.get("previous_closest_collider", {})
+        )
+    if hasattr(safety_geometry, "_last_debug_state"):
+        safety_geometry._last_debug_state = copy.deepcopy(
+            state.get("last_debug_state", {})
+        )
+
+
 def _set_robot_default_state(robot, positions: Any, velocities: Any) -> bool:
     positions_array, velocities_array = _runtime_robot_joint_state(
         robot,
@@ -1156,6 +2128,118 @@ def _set_robot_joint_state(robot, positions: Any, velocities: Any) -> bool:
     if velocities_array is not None and hasattr(robot, "set_joint_velocities"):
         robot.set_joint_velocities(velocities_array)
     return True
+
+
+def _canonicalize_exact_robot_reset(
+    robot,
+    positions: Any,
+    velocities: Any,
+) -> dict[str, Any]:
+    """Canonicalize and verify measured state plus full q/qd drive targets.
+
+    Isaac's measured articulation state and its most recently applied drive
+    target are separate state.  In particular, an arm-only action leaves
+    finger targets untouched and a gripper-only action leaves arm targets
+    untouched.  Replaying a new exact-pose episode after an arbitrary terminal
+    history therefore requires replacing *all* prior targets, not merely
+    calling ``set_joint_positions``/``set_joint_velocities``.
+
+    This helper deliberately performs exact (zero-tolerance) comparisons.  It
+    runs after the exact-pose q/qd restoration and before the reset observation
+    is built, so a reset cannot silently continue with history-dependent arm or
+    finger targets.
+    """
+
+    source_positions = _finite_joint_vector(positions)
+    source_velocities = _finite_joint_vector(velocities)
+    if source_positions is None:
+        raise RuntimeError("Cannot canonicalize an unavailable exact robot state")
+
+    # Use the finite state read back *after* `_set_robot_joint_state` as the
+    # canonical drive target.  Isaac articulation buffers may quantize the raw
+    # JSON/HDF5 float representation; using that raw representation as the
+    # equality target could reject an otherwise exact restored buffer solely
+    # because of dtype conversion.  Source restoration remains independently
+    # checked by the existing exact-pose restoration gate.
+    expected_positions = _required_runtime_vector(
+        robot.get_joint_positions(), "restored_measured_joint_positions"
+    )
+    expected_velocities = _required_runtime_vector(
+        robot.get_joint_velocities(), "restored_measured_joint_velocities"
+    )
+    if expected_positions.shape != expected_velocities.shape:
+        raise RuntimeError("Exact robot q/qd dimensions differ")
+    if source_positions.size > expected_positions.size:
+        raise RuntimeError("Source robot q exceeds runtime articulation dimensions")
+    if source_velocities is not None and source_velocities.size > expected_velocities.size:
+        raise RuntimeError("Source robot qd exceeds runtime articulation dimensions")
+
+    _restore_robot_applied_action_state(
+        robot,
+        {
+            "joint_positions": expected_positions,
+            "joint_velocities": expected_velocities,
+            # This environment uses position/velocity drives.  Supplying an
+            # effort vector could change controller mode/semantics, so effort
+            # is intentionally unset and excluded from the q/qd contract.
+            "joint_efforts": None,
+        },
+    )
+
+    measured_positions = _required_runtime_vector(
+        robot.get_joint_positions(), "reset_measured_joint_positions"
+    )
+    measured_velocities = _required_runtime_vector(
+        robot.get_joint_velocities(), "reset_measured_joint_velocities"
+    )
+    applied = _capture_robot_applied_action_state(robot)
+    if applied is None:
+        raise RuntimeError("Exact robot reset has no applied-action state")
+    applied_positions = applied.get("joint_positions")
+    applied_velocities = applied.get("joint_velocities")
+    comparisons = {
+        "measured_joint_positions": (
+            measured_positions,
+            expected_positions,
+        ),
+        "measured_joint_velocities": (
+            measured_velocities,
+            expected_velocities,
+        ),
+        "applied_joint_position_targets": (
+            applied_positions,
+            expected_positions,
+        ),
+        "applied_joint_velocity_targets": (
+            applied_velocities,
+            expected_velocities,
+        ),
+    }
+    diagnostics: dict[str, Any] = {
+        "contract": EXACT_POSE_ROBOT_RESET_CONTRACT,
+        "joint_count": int(expected_positions.size),
+        "source_joint_count": int(source_positions.size),
+        "canonical_full_q_qd_targets_applied": True,
+        "joint_effort_target_contract": "unset_not_effort_controlled",
+    }
+    mismatches: list[str] = []
+    for name, (actual, expected) in comparisons.items():
+        exact = bool(
+            actual is not None
+            and np.asarray(actual).shape == np.asarray(expected).shape
+            and np.array_equal(np.asarray(actual), np.asarray(expected))
+        )
+        diagnostics[f"{name}_exact"] = exact
+        if not exact:
+            mismatches.append(name)
+    diagnostics["passed"] = not mismatches
+    diagnostics["mismatched_fields"] = mismatches
+    if mismatches:
+        raise RuntimeError(
+            "Exact robot reset q/qd or applied target mismatch: "
+            + ",".join(mismatches)
+        )
+    return diagnostics
 
 
 def _runtime_robot_joint_state(
@@ -1269,8 +2353,20 @@ def _rule_gripper_should_close(
 
 
 def _finite_action(action: np.ndarray) -> np.ndarray:
-    arr = np.nan_to_num(np.asarray(action, dtype=np.float32), nan=0.0, posinf=1.0, neginf=-1.0)
+    arr = np.nan_to_num(
+        np.asarray(action, dtype=np.float32), nan=0.0, posinf=1.0, neginf=-1.0
+    )
     return clip_action(arr)
+
+
+def _task_episode_flags(
+    *, success: bool, strict_failure: bool, horizon_reached: bool
+) -> tuple[bool, bool]:
+    """Return Gymnasium termination flags without conflating task and time."""
+
+    terminated = bool(success or strict_failure)
+    truncated = bool(not terminated and horizon_reached)
+    return terminated, truncated
 
 
 def _valid_runtime_position(value) -> bool:
@@ -1305,7 +2401,9 @@ _OBSERVATION_HUMAN_STATE_KEYS = {
 }
 
 
-def _split_observation_human_state(payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _split_observation_human_state(
+    payload: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Keep replay metadata out of build_observation's fixed keyword surface."""
 
     obs_payload: dict[str, Any] = {}
@@ -1318,8 +2416,19 @@ def _split_observation_human_state(payload: dict[str, Any]) -> tuple[dict[str, A
     return obs_payload, aux_payload
 
 
+def _intentional_human_absence_from_aux(payload: Mapping[str, Any]) -> bool:
+    """Read only the trusted boolean replay marker; reject truthy coercions."""
+
+    value = payload.get("intentional_human_absence", False)
+    if not isinstance(value, (bool, np.bool_)):
+        raise ValueError("intentional_human_absence must be an exact boolean")
+    return bool(value)
+
+
 def _safe_quat(quat: np.ndarray | list[float] | tuple[float, ...]) -> np.ndarray:
-    arr = np.nan_to_num(np.asarray(quat, dtype=float).reshape(-1), nan=0.0, posinf=0.0, neginf=0.0)
+    arr = np.nan_to_num(
+        np.asarray(quat, dtype=float).reshape(-1), nan=0.0, posinf=0.0, neginf=0.0
+    )
     if arr.size < 4:
         result = np.zeros(4, dtype=float)
         result[: arr.size] = arr
@@ -1341,13 +2450,31 @@ def _policy_gripper_should_close(action: np.ndarray, was_closed: bool) -> bool:
     return was_closed
 
 
-def _gripper_center_from_fingers(robot) -> np.ndarray | None:
+def _gripper_finger_world_positions(
+    robot,
+) -> tuple[np.ndarray, np.ndarray] | None:
     try:
         left_pos, _ = robot.gripper._left_finger.get_world_pose()
         right_pos, _ = robot.gripper._right_finger.get_world_pose()
-        return (np.asarray(left_pos, dtype=float) + np.asarray(right_pos, dtype=float)) * 0.5
+        left = np.asarray(left_pos, dtype=float).reshape(-1)
+        right = np.asarray(right_pos, dtype=float).reshape(-1)
+        if (
+            left.size < 3
+            or right.size < 3
+            or not np.all(np.isfinite(left[:3]))
+            or not np.all(np.isfinite(right[:3]))
+        ):
+            return None
+        return left[:3].copy(), right[:3].copy()
     except Exception:
         return None
+
+
+def _gripper_center_from_fingers(robot) -> np.ndarray | None:
+    positions = _gripper_finger_world_positions(robot)
+    if positions is None:
+        return None
+    return (positions[0] + positions[1]) * 0.5
 
 
 def _has_grasped_cube(robot, cube, gripper_center: np.ndarray | None) -> bool:
@@ -1359,5 +2486,9 @@ def _has_grasped_cube(robot, cube, gripper_center: np.ndarray | None) -> bool:
     center = gripper_center
     if center is None:
         center, _ = robot.end_effector.get_world_pose()
-    dist = float(np.linalg.norm(np.asarray(cube_pos, dtype=float) - np.asarray(center, dtype=float)))
+    dist = float(
+        np.linalg.norm(
+            np.asarray(cube_pos, dtype=float) - np.asarray(center, dtype=float)
+        )
+    )
     return width < 0.065 and dist < 0.11

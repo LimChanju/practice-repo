@@ -6,7 +6,7 @@ import json
 import os
 import sys
 import time
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 
@@ -34,6 +34,38 @@ from trajectory_metrics import CartesianMotionTracker  # noqa: E402
 
 
 SAFETY_THRESHOLDS = SafetyThresholds.from_env()
+TASK_FAILURE_DIAGNOSTIC_SCHEMA = "task_cbf_failure_diagnostics_v1"
+
+
+def _mapping_or_empty(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _task_phase_name(controller_event: int) -> str:
+    event = int(controller_event)
+    if event <= 0:
+        return "approach_cube"
+    if event <= 3:
+        return "grasp_cube"
+    if event <= 6:
+        return "move_to_target"
+    return "release_cube"
+
+
+def _json_mapping(value: Any) -> str:
+    mapping = _mapping_or_empty(value)
+    return json.dumps(
+        dict(mapping),
+        sort_keys=True,
+        separators=(",", ":"),
+        default=lambda item: (
+            item.tolist()
+            if isinstance(item, np.ndarray)
+            else item.item()
+            if isinstance(item, np.generic)
+            else str(item)
+        ),
+    )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -79,6 +111,15 @@ def _parse_args() -> argparse.Namespace:
         help="Seconds to wait for a live HMD and at least one hand. Zero waits indefinitely.",
     )
     parser.add_argument("--action-scale", type=float, default=1.0)
+    parser.add_argument(
+        "--task-reward-version",
+        default="",
+        help=(
+            "Evaluation-only reward override. Empty uses checkpoint metadata. "
+            "This does not change policy actions and is required when evaluating "
+            "legacy checkpoints whose recorded reward implementation was retired."
+        ),
+    )
     parser.add_argument(
         "--residual-gate-mode",
         choices=("checkpoint", "none", "distance"),
@@ -311,6 +352,23 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--release-gate-max-hold", type=int, default=240)
     parser.add_argument(
+        "--strict-task-semantics",
+        action="store_true",
+        help=(
+            "Opt in to the event-driven grasp/place/release controller contract. "
+            "Legacy behavior remains the default for artifact compatibility."
+        ),
+    )
+    parser.add_argument(
+        "--strict-place-xy-tolerance-m",
+        type=float,
+        default=0.04,
+        help=(
+            "Horizontal released-cube target tolerance used by strict task "
+            "semantics. It is recorded in the result contract."
+        ),
+    )
+    parser.add_argument(
         "--blend-bc-checkpoint",
         default="",
         help="Optional BC checkpoint to blend into the evaluated policy for selected controller events.",
@@ -420,6 +478,7 @@ from rl import (  # noqa: E402
     HumanTrajectoryReplay,
     IsaacPickPlaceEnv,
     PickPlaceEnvConfig,
+    REWARD_VERSION,
     parse_pseudo_errp_sources,
 )
 from rl.actions import (
@@ -960,6 +1019,12 @@ def _run() -> None:
     release_gate_dist = (
         None if args.release_gate_dist < 0.0 else float(args.release_gate_dist)
     )
+    checkpoint_reward_version = str(
+        runner.metadata.get("reward_version", "") or REWARD_VERSION
+    )
+    effective_task_reward_version = str(
+        args.task_reward_version or checkpoint_reward_version
+    )
     pseudo_errp_sources = parse_pseudo_errp_sources(args.pseudo_errp_sources)
     human_replay = _maybe_load_human_replay()
     evaluation_episodes = int(args.episodes)
@@ -986,6 +1051,11 @@ def _run() -> None:
             release_gate_dist=release_gate_dist,
             release_gate_max_hold=args.release_gate_max_hold,
             require_release_for_success=args.require_release_for_success,
+            strict_task_semantics=bool(args.strict_task_semantics),
+            strict_place_xy_tolerance_m=float(
+                args.strict_place_xy_tolerance_m
+            ),
+            reward_version=effective_task_reward_version,
             observation_mode="flat",
             seed=args.seed,
             render=args.render or args.live_vr,
@@ -1178,20 +1248,76 @@ def _run() -> None:
             geometry_valid_steps = 0
             collision_event_count = 0
             collision_was_active = False
+            collision_consecutive_steps = 0
+            collision_max_consecutive_steps = 0
             min_surface_gap = MISSING_DISTANCE_M
+            minimum_ttc_s = 10.0
+            minimum_ttc_valid = False
             safety_query_time_ms_sum = 0.0
             closest_link_counts: dict[str, int] = {}
             collision_link_counts: dict[str, int] = {}
             physical_safety_active_count = 0
             physical_safety_feasible_count = 0
+            physical_safety_intervention_available_count = 0
             physical_safety_intervention_count = 0
             physical_safety_intervention_norm_sum = 0.0
             physical_safety_intervention_norm_max = 0.0
             physical_safety_slack_sum = 0.0
             physical_safety_slack_max = 0.0
+            physical_safety_violation_before_sum = 0.0
+            physical_safety_violation_before_max = 0.0
+            physical_safety_violation_after_sum = 0.0
+            physical_safety_violation_after_max = 0.0
             physical_safety_solve_time_ms_sum = 0.0
             gate_ee_acceleration_norms: list[float] = []
             gate_ee_jerk_norms: list[float] = []
+            initial_controller_event = int(info["controller_event"])
+            maximum_controller_event_reached = initial_controller_event
+            controller_lift_phase_reached = bool(
+                4 <= initial_controller_event < 10
+            )
+            controller_place_phase_reached = bool(
+                5 <= initial_controller_event < 10
+            )
+            controller_release_phase_reached = bool(
+                7 <= initial_controller_event < 10
+            )
+            cube_entered_target_tolerance = bool(
+                float(info["cube_target_dist"]) <= float(args.success_dist)
+            )
+            released_after_grasp = False
+            grasp_was_observed = bool(info["has_grasped_cube"])
+            has_grasped_previous = bool(info["has_grasped_cube"])
+            gripper_closed_previous = bool(info.get("gripper_closed", False))
+            first_grasp_step = 0 if has_grasped_previous else -1
+            first_grasp_loss_step = -1
+            first_target_entry_step = (
+                0 if cube_entered_target_tolerance else -1
+            )
+            first_release_step = -1
+            first_success_step = -1
+            grasp_acquisition_count = 0
+            grasp_loss_count = 0
+            release_command_count = 0
+            task_phase_paused_steps = 0
+            task_phase_reentry_count = 0
+            physical_intervention_consecutive_steps = 0
+            max_consecutive_physical_intervention_steps = 0
+            physical_intervention_steps_before_grasp = 0
+            physical_intervention_steps_during_transport = 0
+            physical_intervention_steps_during_place = 0
+            initial_strict_payload = _mapping_or_empty(
+                info.get("strict_task_semantics")
+            )
+            strict_semantics_config: dict[str, Any] = dict(
+                _mapping_or_empty(initial_strict_payload.get("config"))
+            )
+            strict_semantics_final_state: dict[str, Any] = dict(
+                _mapping_or_empty(initial_strict_payload.get("state"))
+            )
+            strict_semantics_last_decision: dict[str, Any] = dict(
+                _mapping_or_empty(initial_strict_payload.get("last_decision"))
+            )
 
             for _ in range(args.max_steps):
                 if live_vr is not None:
@@ -1273,6 +1399,9 @@ def _run() -> None:
                         (1.0 - blend_alpha) * action + blend_alpha * bc_action
                     )
                     bc_blend_count += 1
+                controller_event_before = int(info.get("controller_event", -1))
+                controller_t_before = float(info.get("controller_t", 0.0))
+                task_action = np.asarray(action, dtype=np.float32).reshape(-1).copy()
                 obs, reward, terminated, truncated, info = env.step(action)
                 if args.render and args.render_step_delay_sec > 0.0:
                     time.sleep(float(args.render_step_delay_sec))
@@ -1282,6 +1411,95 @@ def _run() -> None:
                 )
                 min_ee_cube_dist = min(min_ee_cube_dist, float(info["ee_cube_dist"]))
                 grasped_any = grasped_any or bool(info["has_grasped_cube"])
+                has_grasped_now = bool(info["has_grasped_cube"])
+                step_index = int(info["step"])
+                grasp_acquired = bool(
+                    has_grasped_now and not has_grasped_previous
+                )
+                grasp_lost = bool(
+                    has_grasped_previous and not has_grasped_now
+                )
+                if grasp_acquired:
+                    grasp_acquisition_count += 1
+                    if first_grasp_step < 0:
+                        first_grasp_step = step_index
+                if grasp_lost:
+                    grasp_loss_count += 1
+                    if first_grasp_loss_step < 0:
+                        first_grasp_loss_step = step_index
+                released_after_grasp = released_after_grasp or bool(
+                    grasp_was_observed and not has_grasped_now
+                )
+                grasp_was_observed = grasp_was_observed or has_grasped_now
+                gripper_closed_now = bool(info.get("gripper_closed", False))
+                gripper_command = str(info.get("gripper_command", "") or "")
+                release_commanded = bool(
+                    (gripper_command == "open" and gripper_closed_previous)
+                    or (gripper_closed_previous and not gripper_closed_now)
+                )
+                if release_commanded:
+                    release_command_count += 1
+                    if first_release_step < 0:
+                        first_release_step = step_index
+                controller_event = int(info["controller_event"])
+                if not (
+                    args.strict_task_semantics and controller_event >= 10
+                ):
+                    maximum_controller_event_reached = max(
+                        maximum_controller_event_reached, controller_event
+                    )
+                controller_lift_phase_reached = bool(
+                    controller_lift_phase_reached
+                    or 4 <= controller_event < 10
+                )
+                controller_place_phase_reached = bool(
+                    controller_place_phase_reached
+                    or 5 <= controller_event < 10
+                )
+                controller_release_phase_reached = bool(
+                    controller_release_phase_reached
+                    or 7 <= controller_event < 10
+                )
+                target_entered_now = bool(
+                    float(info["cube_target_dist"]) <= float(args.success_dist)
+                )
+                if target_entered_now and first_target_entry_step < 0:
+                    first_target_entry_step = step_index
+                cube_entered_target_tolerance = bool(
+                    cube_entered_target_tolerance or target_entered_now
+                )
+                step_success = bool(info.get("success", False))
+                if step_success and first_success_step < 0:
+                    first_success_step = step_index
+                phase_control = _mapping_or_empty(info.get("task_phase_control"))
+                task_phase_paused = bool(
+                    info.get(
+                        "task_phase_paused",
+                        phase_control.get("paused", False),
+                    )
+                )
+                task_phase_reentry = bool(
+                    info.get(
+                        "task_phase_reentry",
+                        phase_control.get("reentry", False),
+                    )
+                )
+                task_phase_paused_steps += int(task_phase_paused)
+                task_phase_reentry_count += int(task_phase_reentry)
+                strict_payload = _mapping_or_empty(
+                    info.get("strict_task_semantics")
+                )
+                strict_config = _mapping_or_empty(strict_payload.get("config"))
+                strict_state = _mapping_or_empty(strict_payload.get("state"))
+                strict_decision = _mapping_or_empty(
+                    strict_payload.get("last_decision")
+                )
+                if strict_config:
+                    strict_semantics_config = dict(strict_config)
+                if strict_state:
+                    strict_semantics_final_state = dict(strict_state)
+                if strict_decision:
+                    strict_semantics_last_decision = dict(strict_decision)
                 errp_feedback = float(info["errp_feedback"])
                 errp_uncertainty = float(info.get("errp_uncertainty", 0.0))
                 errp_count += int(info.get("errp_label", errp_feedback >= 0.5))
@@ -1317,6 +1535,13 @@ def _run() -> None:
                 geometry_valid_steps += int(geometry_valid)
                 if human_collision and not collision_was_active:
                     collision_event_count += 1
+                collision_consecutive_steps = (
+                    collision_consecutive_steps + 1 if human_collision else 0
+                )
+                collision_max_consecutive_steps = max(
+                    collision_max_consecutive_steps,
+                    collision_consecutive_steps,
+                )
                 collision_was_active = bool(human_collision)
                 min_hand_gripper_dist = min(
                     min_hand_gripper_dist,
@@ -1352,6 +1577,10 @@ def _run() -> None:
                 )
                 if geometry_valid:
                     min_surface_gap = min(min_surface_gap, post_surface_gap)
+                step_ttc_s, step_ttc_valid = _minimum_ttc(obs_dict)
+                if step_ttc_valid:
+                    minimum_ttc_s = min(minimum_ttc_s, step_ttc_s)
+                    minimum_ttc_valid = True
                 safety_query_time_ms_sum += float(
                     info.get("safety_query_time_ms", 0.0)
                 )
@@ -1372,16 +1601,40 @@ def _run() -> None:
                                 collision_link_counts.get(link_name, 0) + 1
                             )
                 post_ee_position = _obs_vector3(obs_dict, "ee_pos")
+                post_cube_position = _obs_vector3(obs_dict, "cube_pos")
+                cube_to_target = _obs_vector3(
+                    obs_dict, "cube_to_place_target"
+                )
                 post_left_hand_position = _obs_vector3(obs_dict, "human_left_hand_pos")
                 post_right_hand_position = _obs_vector3(
                     obs_dict, "human_right_hand_pos"
                 )
                 if post_ee_position is None:
                     post_ee_position = np.full(3, np.nan, dtype=float)
+                if post_cube_position is None:
+                    post_cube_position = np.full(3, np.nan, dtype=float)
+                if cube_to_target is None:
+                    cube_to_target = np.full(3, np.nan, dtype=float)
                 if post_left_hand_position is None:
                     post_left_hand_position = np.full(3, np.nan, dtype=float)
                 if post_right_hand_position is None:
                     post_right_hand_position = np.full(3, np.nan, dtype=float)
+                try:
+                    cube_linear_velocity = np.asarray(
+                        env.active_cube.get_linear_velocity(), dtype=float
+                    ).reshape(-1)
+                    cube_speed_valid = bool(
+                        cube_linear_velocity.size >= 3
+                        and np.all(np.isfinite(cube_linear_velocity[:3]))
+                    )
+                    cube_speed_mps = (
+                        float(np.linalg.norm(cube_linear_velocity[:3]))
+                        if cube_speed_valid
+                        else 0.0
+                    )
+                except Exception:
+                    cube_speed_valid = False
+                    cube_speed_mps = 0.0
                 motion_sample = motion_tracker.update(
                     post_ee_position,
                     float(info.get("sim_time", 0.0)),
@@ -1396,14 +1649,65 @@ def _run() -> None:
                 intervention_norm = float(
                     physical_safety.get("intervention_norm_radps", 0.0)
                 )
-                physical_slack = float(physical_safety.get("slack_radps", 0.0))
+                physical_slack = float(
+                    physical_safety.get(
+                        "slack_mps", physical_safety.get("slack_radps", 0.0)
+                    )
+                )
+                physical_violation_before = float(
+                    physical_safety.get(
+                        "max_constraint_violation_before_mps",
+                        physical_safety.get("max_constraint_violation_before", 0.0),
+                    )
+                )
+                physical_violation_after = float(
+                    physical_safety.get(
+                        "max_constraint_violation_after_mps",
+                        physical_safety.get("max_constraint_violation_after", 0.0),
+                    )
+                )
                 physical_solve_time_ms = float(
                     physical_safety.get("solve_time_ms", 0.0)
                 )
+                physical_numeric = {
+                    "intervention_norm_radps": intervention_norm,
+                    "slack_mps": physical_slack,
+                    "constraint_violation_before_mps": physical_violation_before,
+                    "constraint_violation_after_mps": physical_violation_after,
+                    "solve_time_ms": physical_solve_time_ms,
+                }
+                invalid_physical = [
+                    name
+                    for name, value in physical_numeric.items()
+                    if not np.isfinite(value) or value < 0.0
+                ]
+                if invalid_physical:
+                    raise RuntimeError(
+                        "Physical-safety diagnostics must be finite and "
+                        f"non-negative: {invalid_physical}"
+                    )
                 physical_safety_active_count += int(physical_active)
                 physical_safety_feasible_count += int(physical_feasible)
-                physical_safety_intervention_count += int(
+                physical_safety_intervention_available_count += int(
+                    intervention_available
+                )
+                physical_intervened = bool(
                     intervention_available and intervention_norm > 1e-8
+                )
+                physical_safety_intervention_count += int(physical_intervened)
+                if physical_intervened:
+                    physical_intervention_consecutive_steps += 1
+                    if first_grasp_step < 0:
+                        physical_intervention_steps_before_grasp += 1
+                    elif controller_event in (4, 5):
+                        physical_intervention_steps_during_transport += 1
+                    elif controller_event >= 6:
+                        physical_intervention_steps_during_place += 1
+                else:
+                    physical_intervention_consecutive_steps = 0
+                max_consecutive_physical_intervention_steps = max(
+                    max_consecutive_physical_intervention_steps,
+                    physical_intervention_consecutive_steps,
                 )
                 physical_safety_intervention_norm_sum += intervention_norm
                 physical_safety_intervention_norm_max = max(
@@ -1412,6 +1716,16 @@ def _run() -> None:
                 physical_safety_slack_sum += physical_slack
                 physical_safety_slack_max = max(
                     physical_safety_slack_max, physical_slack
+                )
+                physical_safety_violation_before_sum += physical_violation_before
+                physical_safety_violation_before_max = max(
+                    physical_safety_violation_before_max,
+                    physical_violation_before,
+                )
+                physical_safety_violation_after_sum += physical_violation_after
+                physical_safety_violation_after_max = max(
+                    physical_safety_violation_after_max,
+                    physical_violation_after,
                 )
                 physical_safety_solve_time_ms_sum += physical_solve_time_ms
                 encounter_aux = info.get("human_replay_aux_state", {})
@@ -1450,6 +1764,125 @@ def _run() -> None:
                         "seed": int(episode_seed),
                         "step": int(info["step"]),
                         "sim_time": float(info.get("sim_time", 0.0)),
+                        "controller_event_before": int(
+                            phase_control.get(
+                                "event_before", controller_event_before
+                            )
+                        ),
+                        "controller_event_after": int(
+                            phase_control.get("event_after", controller_event)
+                        ),
+                        "controller_t_before": float(
+                            phase_control.get(
+                                "controller_t_before", controller_t_before
+                            )
+                        ),
+                        "controller_t_after": float(
+                            phase_control.get(
+                                "controller_t_after",
+                                info.get("controller_t", 0.0),
+                            )
+                        ),
+                        "task_phase_before": _task_phase_name(
+                            controller_event_before
+                        ),
+                        "task_phase_after": _task_phase_name(controller_event),
+                        "phase_hold_steps": int(info.get("phase_hold_steps", 0)),
+                        "task_phase_advanced": int(
+                            bool(
+                                phase_control.get(
+                                    "phase_changed",
+                                    info.get("task_phase_advanced", True),
+                                )
+                            )
+                        ),
+                        "task_phase_paused": int(task_phase_paused),
+                        "task_phase_reentry": int(task_phase_reentry),
+                        "task_phase_control_reason": str(
+                            phase_control.get("reason", "")
+                        ),
+                        "task_action_x": float(task_action[0]),
+                        "task_action_y": float(task_action[1]),
+                        "task_action_z": float(task_action[2]),
+                        "task_action_yaw": float(task_action[3]),
+                        "task_action_gripper": float(task_action[4]),
+                        "gripper_command": gripper_command,
+                        "gripper_closed": int(gripper_closed_now),
+                        "gripper_width_m": _obs_scalar(
+                            obs_dict, "gripper_width", default=0.0
+                        ),
+                        "has_grasped_cube": int(has_grasped_now),
+                        "grasp_acquired": int(grasp_acquired),
+                        "grasp_lost": int(grasp_lost),
+                        "release_commanded": int(release_commanded),
+                        "ee_cube_dist_m": float(info["ee_cube_dist"]),
+                        "cube_target_dist_m": float(info["cube_target_dist"]),
+                        "cube_target_xy_error_m": float(
+                            np.linalg.norm(cube_to_target[:2])
+                        ),
+                        "cube_target_z_error_m": float(abs(cube_to_target[2])),
+                        "post_cube_x": float(post_cube_position[0]),
+                        "post_cube_y": float(post_cube_position[1]),
+                        "post_cube_z": float(post_cube_position[2]),
+                        "cube_speed_mps": cube_speed_mps,
+                        "cube_speed_valid": int(cube_speed_valid),
+                        "step_success": int(step_success),
+                        "step_truncated": int(bool(truncated)),
+                        "task_terminal_reason": str(
+                            info.get("task_terminal_reason", "") or ""
+                        ),
+                        "strict_task_semantics_enabled": int(
+                            bool(
+                                strict_payload.get(
+                                    "enabled", args.strict_task_semantics
+                                )
+                            )
+                        ),
+                        "strict_success_latched": int(
+                            bool(strict_state.get("success_latched", False))
+                        ),
+                        "strict_failure_reason": str(
+                            strict_state.get("failure_reason", "") or ""
+                        ),
+                        "strict_transition_reason": str(
+                            strict_decision.get("reason", "") or ""
+                        ),
+                        "strict_transition_held": int(
+                            bool(strict_decision.get("held", False))
+                        ),
+                        "strict_retry_started": int(
+                            bool(strict_decision.get("retry_started", False))
+                        ),
+                        "strict_transition_reentry": int(
+                            bool(strict_decision.get("reentry", False))
+                        ),
+                        "strict_grasp_retry_count": int(
+                            strict_state.get("grasp_retry_count", 0) or 0
+                        ),
+                        "strict_phase_reentry_count": int(
+                            strict_state.get("phase_reentry_count", 0) or 0
+                        ),
+                        "strict_phase_hold_total_steps": int(
+                            strict_state.get("phase_hold_total_steps", 0) or 0
+                        ),
+                        "strict_place_ready_latched": int(
+                            bool(strict_state.get("place_ready_latched", False))
+                        ),
+                        "strict_place_ready_streak": int(
+                            strict_state.get("place_ready_streak", 0) or 0
+                        ),
+                        "strict_release_settle_streak": int(
+                            strict_state.get("release_settle_streak", 0) or 0
+                        ),
+                        "strict_cbf_pause_steps": int(
+                            strict_state.get("cbf_pause_steps", 0) or 0
+                        ),
+                        "strict_task_semantics_state_json": _json_mapping(
+                            strict_state
+                        ),
+                        "strict_task_semantics_last_decision_json": _json_mapping(
+                            strict_decision
+                        ),
                         "encounter_id": str(encounter.get("id", "")),
                         "encounter_target_severity": str(
                             encounter.get("target_severity", "")
@@ -1492,8 +1925,32 @@ def _run() -> None:
                             info.get("physical_safety_controller", "none")
                         ),
                         "physical_safety_active": int(physical_active),
+                        "physical_safety_intervened": int(physical_intervened),
                         "physical_safety_intervention_available": int(
                             intervention_available
+                        ),
+                        "physical_safety_valid_hand_count": int(
+                            physical_safety.get("valid_hand_count", 0)
+                        ),
+                        "physical_safety_tracked_hand_count": int(
+                            physical_safety.get("tracked_hand_count", 0)
+                        ),
+                        "physical_safety_fallback_applied": int(
+                            bool(physical_safety.get("fallback_applied", False))
+                        ),
+                        "physical_safety_failure_reasons_json": json.dumps(
+                            list(physical_safety.get("failure_reasons", ())),
+                            separators=(",", ":"),
+                        ),
+                        "intentional_human_absence": int(
+                            bool(
+                                info.get(
+                                    "intentional_human_absence",
+                                    physical_safety.get(
+                                        "intentional_human_absence", False
+                                    ),
+                                )
+                            )
                         ),
                         "physical_safety_constraint_count": int(
                             physical_safety.get("constraint_count", 0)
@@ -1510,16 +1967,19 @@ def _run() -> None:
                             )
                         ),
                         "physical_safety_constraint_violation_before": float(
-                            physical_safety.get(
-                                "max_constraint_violation_before", 0.0
-                            )
+                            physical_violation_before
+                        ),
+                        "physical_safety_constraint_violation_before_mps": float(
+                            physical_violation_before
                         ),
                         "physical_safety_constraint_violation_after": float(
-                            physical_safety.get(
-                                "max_constraint_violation_after", 0.0
-                            )
+                            physical_violation_after
+                        ),
+                        "physical_safety_constraint_violation_after_mps": float(
+                            physical_violation_after
                         ),
                         "physical_safety_slack_radps": physical_slack,
+                        "physical_safety_slack_mps": physical_slack,
                         "physical_safety_min_predicted_gap_m": float(
                             physical_safety.get("min_predicted_gap_m", 10.0)
                         ),
@@ -1642,10 +2102,26 @@ def _run() -> None:
                         ),
                     }
                 )
+                has_grasped_previous = has_grasped_now
+                gripper_closed_previous = gripper_closed_now
                 if terminated or truncated:
                     break
 
             episode_steps = max(1, int(info["step"]))
+            episode_success = bool(info.get("success", False))
+            task_terminal_reason = str(
+                info.get("task_terminal_reason", "")
+                or strict_semantics_final_state.get("failure_reason", "")
+                or (
+                    "success"
+                    if episode_success
+                    else "terminated_unspecified"
+                    if terminated
+                    else "max_episode_steps"
+                    if truncated
+                    else "incomplete"
+                )
+            )
             row = {
                 "episode": episode_idx,
                 "seed": episode_seed,
@@ -1675,8 +2151,17 @@ def _run() -> None:
                 "place_target_position": [
                     float(value) for value in place_target_position
                 ],
-                "success": bool(terminated),
+                "success": episode_success,
+                "terminated": bool(terminated),
+                "collision": bool(human_collision_count > 0),
                 "truncated": bool(truncated),
+                "task_terminal_reason": task_terminal_reason,
+                "task_failure_diagnostic_schema": (
+                    TASK_FAILURE_DIAGNOSTIC_SCHEMA
+                ),
+                "strict_task_semantics_enabled": bool(
+                    args.strict_task_semantics
+                ),
                 "steps": int(info["step"]),
                 "total_reward": float(total_reward),
                 "final_cube_target_dist": float(info["cube_target_dist"]),
@@ -1688,6 +2173,51 @@ def _run() -> None:
                 "min_hand_gripper_surface_gap": float(min_hand_gripper_dist),
                 "grasped_any": bool(grasped_any),
                 "final_has_grasped": bool(info["has_grasped_cube"]),
+                "released_after_grasp": bool(released_after_grasp),
+                "cube_entered_target_tolerance": bool(
+                    cube_entered_target_tolerance
+                ),
+                "maximum_controller_event_reached": int(
+                    maximum_controller_event_reached
+                ),
+                "controller_lift_phase_reached": bool(
+                    controller_lift_phase_reached
+                ),
+                "controller_place_phase_reached": bool(
+                    controller_place_phase_reached
+                ),
+                "controller_release_phase_reached": bool(
+                    controller_release_phase_reached
+                ),
+                "first_grasp_step": int(first_grasp_step),
+                "first_grasp_loss_step": int(first_grasp_loss_step),
+                "first_target_entry_step": int(first_target_entry_step),
+                "first_release_step": int(first_release_step),
+                "first_success_step": int(first_success_step),
+                "grasp_acquisition_count": int(grasp_acquisition_count),
+                "grasp_loss_count": int(grasp_loss_count),
+                "release_command_count": int(release_command_count),
+                "task_phase_paused_steps": int(task_phase_paused_steps),
+                "task_phase_reentry_count": int(task_phase_reentry_count),
+                "max_consecutive_physical_safety_intervention_steps": int(
+                    max_consecutive_physical_intervention_steps
+                ),
+                "physical_safety_intervention_steps_before_grasp": int(
+                    physical_intervention_steps_before_grasp
+                ),
+                "physical_safety_intervention_steps_during_transport": int(
+                    physical_intervention_steps_during_transport
+                ),
+                "physical_safety_intervention_steps_during_place": int(
+                    physical_intervention_steps_during_place
+                ),
+                "strict_task_semantics_config": strict_semantics_config,
+                "strict_task_semantics_final_state": (
+                    strict_semantics_final_state
+                ),
+                "strict_task_semantics_last_decision": (
+                    strict_semantics_last_decision
+                ),
                 "errp_count": int(errp_count),
                 "errp_feedback_sum": float(errp_feedback_sum),
                 "mean_errp_feedback": float(
@@ -1737,6 +2267,9 @@ def _run() -> None:
                 "near_miss_steps": int(near_miss_steps),
                 "geometry_valid_steps": int(geometry_valid_steps),
                 "collision_event_count": int(collision_event_count),
+                "collision_max_consecutive_steps": int(
+                    collision_max_consecutive_steps
+                ),
                 "collision_rate": float(collision_steps / episode_steps),
                 "near_rate": float(near_steps / episode_steps),
                 "near_miss_rate": float(near_miss_steps / episode_steps),
@@ -1746,6 +2279,15 @@ def _run() -> None:
                 "geometry_valid_rate": float(geometry_valid_steps / episode_steps),
                 "min_surface_gap": float(min_surface_gap),
                 "minimum_end_effector_surface_gap_m": float(min_surface_gap),
+                "minimum_ttc_s": float(minimum_ttc_s),
+                "minimum_ttc_valid": bool(minimum_ttc_valid),
+                "physics_dt_s": float(env.physics_dt_s),
+                "completion_time_s": float(episode_steps * env.physics_dt_s),
+                "collision_duration_s": float(collision_steps * env.physics_dt_s),
+                "collision_max_consecutive_duration_s": float(
+                    collision_max_consecutive_steps * env.physics_dt_s
+                ),
+                "near_human_duration_s": float(near_steps * env.physics_dt_s),
                 "mean_safety_query_time_ms": float(
                     safety_query_time_ms_sum / episode_steps
                 ),
@@ -1760,6 +2302,12 @@ def _run() -> None:
                 ),
                 "physical_safety_feasible_rate": float(
                     physical_safety_feasible_count / episode_steps
+                ),
+                "physical_safety_intervention_available_count": int(
+                    physical_safety_intervention_available_count
+                ),
+                "physical_safety_intervention_available_rate": float(
+                    physical_safety_intervention_available_count / episode_steps
                 ),
                 "physical_safety_intervention_count": int(
                     physical_safety_intervention_count
@@ -1778,6 +2326,24 @@ def _run() -> None:
                 ),
                 "max_physical_safety_slack_radps": float(
                     physical_safety_slack_max
+                ),
+                "mean_physical_safety_slack_mps": float(
+                    physical_safety_slack_sum / episode_steps
+                ),
+                "max_physical_safety_slack_mps": float(
+                    physical_safety_slack_max
+                ),
+                "mean_physical_safety_constraint_violation_before_mps": float(
+                    physical_safety_violation_before_sum / episode_steps
+                ),
+                "max_physical_safety_constraint_violation_before_mps": float(
+                    physical_safety_violation_before_max
+                ),
+                "mean_physical_safety_constraint_violation_after_mps": float(
+                    physical_safety_violation_after_sum / episode_steps
+                ),
+                "max_physical_safety_constraint_violation_after_mps": float(
+                    physical_safety_violation_after_max
                 ),
                 "mean_physical_safety_solve_time_ms": float(
                     physical_safety_solve_time_ms_sum / episode_steps
@@ -1831,11 +2397,15 @@ def _run() -> None:
             "live_vr": args.live_vr,
             "vr_tracking_timeout_sec": args.vr_tracking_timeout_sec,
             "action_scale": args.action_scale,
+            "checkpoint_task_reward_version": checkpoint_reward_version,
+            "task_reward_version_override": str(args.task_reward_version),
+            "effective_task_reward_version": effective_task_reward_version,
             "residual_gate_mode_override": args.residual_gate_mode,
             "mask_human_obs_for_policy": args.mask_human_obs_for_policy,
             "fixed_orientation": args.fixed_orientation,
             "gripper_mode": args.gripper_mode,
             "success_dist": args.success_dist,
+            "physics_dt_s": float(env.physics_dt_s),
             "safety_gate_start_dist": args.safety_gate_start_dist,
             "safety_gate_full_dist": args.safety_gate_full_dist,
             "safety_residual_checkpoint": (
@@ -1886,6 +2456,15 @@ def _run() -> None:
             "release_gate_dist": release_gate_dist,
             "release_gate_max_hold": args.release_gate_max_hold,
             "require_release_for_success": args.require_release_for_success,
+            "strict_task_semantics": bool(args.strict_task_semantics),
+            "strict_task_semantics_config": (
+                dict(rows[0].get("strict_task_semantics_config", {}))
+                if rows
+                else {}
+            ),
+            "task_failure_diagnostic_schema": (
+                TASK_FAILURE_DIAGNOSTIC_SCHEMA
+            ),
             "blend_bc_checkpoint": (
                 _resolve_project_path(args.blend_bc_checkpoint)
                 if args.blend_bc_checkpoint
@@ -2030,6 +2609,12 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     physical_intervention_steps = int(
         sum(row.get("physical_safety_intervention_count", 0) for row in rows)
     )
+    physical_intervention_available_steps = int(
+        sum(
+            row.get("physical_safety_intervention_available_count", 0)
+            for row in rows
+        )
+    )
     physical_feasible_steps = float(
         sum(
             row.get("physical_safety_feasible_rate", 1.0) * row["steps"]
@@ -2051,7 +2636,29 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     )
     physical_slack_sum = float(
         sum(
-            row.get("mean_physical_safety_slack_radps", 0.0) * row["steps"]
+            row.get(
+                "mean_physical_safety_slack_mps",
+                row.get("mean_physical_safety_slack_radps", 0.0),
+            )
+            * row["steps"]
+            for row in rows
+        )
+    )
+    physical_violation_before_sum = float(
+        sum(
+            row.get(
+                "mean_physical_safety_constraint_violation_before_mps", 0.0
+            )
+            * row["steps"]
+            for row in rows
+        )
+    )
+    physical_violation_after_sum = float(
+        sum(
+            row.get(
+                "mean_physical_safety_constraint_violation_after_mps", 0.0
+            )
+            * row["steps"]
             for row in rows
         )
     )
@@ -2087,6 +2694,44 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "successes": int(np.sum(success)),
         "success_rate": float(np.mean(success)),
+        "released_after_grasp_rate": float(
+            np.mean([bool(row.get("released_after_grasp", False)) for row in rows])
+        ),
+        "cube_entered_target_tolerance_rate": float(
+            np.mean(
+                [
+                    bool(row.get("cube_entered_target_tolerance", False))
+                    for row in rows
+                ]
+            )
+        ),
+        "controller_lift_phase_reached_rate": float(
+            np.mean(
+                [
+                    bool(row.get("controller_lift_phase_reached", False))
+                    for row in rows
+                ]
+            )
+        ),
+        "controller_place_phase_reached_rate": float(
+            np.mean(
+                [
+                    bool(row.get("controller_place_phase_reached", False))
+                    for row in rows
+                ]
+            )
+        ),
+        "controller_release_phase_reached_rate": float(
+            np.mean(
+                [
+                    bool(row.get("controller_release_phase_reached", False))
+                    for row in rows
+                ]
+            )
+        ),
+        "collision_episode_rate": float(
+            np.mean([bool(row.get("collision", False)) for row in rows])
+        ),
         "truncated_rate": float(np.mean(truncated)),
         "grasp_rate": float(np.mean(grasped)),
         "mean_steps": float(np.mean(steps)),
@@ -2131,6 +2776,18 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "near_miss_steps": near_miss_steps,
         "geometry_valid_steps": geometry_valid_steps,
         "collision_event_count": collision_event_count,
+        "collision_duration_s": float(
+            sum(row.get("collision_duration_s", 0.0) for row in rows)
+        ),
+        "near_human_duration_s": float(
+            sum(row.get("near_human_duration_s", 0.0) for row in rows)
+        ),
+        "max_collision_consecutive_duration_s": float(
+            max(
+                row.get("collision_max_consecutive_duration_s", 0.0)
+                for row in rows
+            )
+        ),
         "gate_active_steps": gate_active_steps,
         "collision_rate": float(collision_steps / total_steps),
         "near_rate": float(near_steps / total_steps),
@@ -2139,6 +2796,12 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "geometry_valid_rate": float(geometry_valid_steps / total_steps),
         "physical_safety_active_steps": physical_active_steps,
         "physical_safety_active_rate": float(physical_active_steps / total_steps),
+        "physical_safety_intervention_available_steps": (
+            physical_intervention_available_steps
+        ),
+        "physical_safety_intervention_available_rate": float(
+            physical_intervention_available_steps / total_steps
+        ),
         "physical_safety_intervention_steps": physical_intervention_steps,
         "physical_safety_intervention_rate": float(
             physical_intervention_steps / total_steps
@@ -2161,14 +2824,54 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "max_physical_safety_slack_radps": float(
             max(row.get("max_physical_safety_slack_radps", 0.0) for row in rows)
         ),
+        "mean_physical_safety_slack_mps": float(
+            physical_slack_sum / total_steps
+        ),
+        "max_physical_safety_slack_mps": float(
+            max(
+                row.get(
+                    "max_physical_safety_slack_mps",
+                    row.get("max_physical_safety_slack_radps", 0.0),
+                )
+                for row in rows
+            )
+        ),
+        "mean_physical_safety_constraint_violation_before_mps": float(
+            physical_violation_before_sum / total_steps
+        ),
+        "max_physical_safety_constraint_violation_before_mps": float(
+            max(
+                row.get(
+                    "max_physical_safety_constraint_violation_before_mps", 0.0
+                )
+                for row in rows
+            )
+        ),
+        "mean_physical_safety_constraint_violation_after_mps": float(
+            physical_violation_after_sum / total_steps
+        ),
+        "max_physical_safety_constraint_violation_after_mps": float(
+            max(
+                row.get(
+                    "max_physical_safety_constraint_violation_after_mps", 0.0
+                )
+                for row in rows
+            )
+        ),
         "mean_physical_safety_solve_time_ms": float(
             physical_solve_time_ms_sum / total_steps
         ),
         "mean_ee_path_length_m": float(
             np.mean([row.get("ee_path_length_m", 0.0) for row in rows])
         ),
+        "mean_ee_acceleration_mps2": float(
+            np.mean([row.get("mean_ee_acceleration_mps2", 0.0) for row in rows])
+        ),
         "mean_rms_ee_acceleration_mps2": float(
             np.mean([row.get("rms_ee_acceleration_mps2", 0.0) for row in rows])
+        ),
+        "mean_ee_jerk_mps3": float(
+            np.mean([row.get("mean_ee_jerk_mps3", 0.0) for row in rows])
         ),
         "mean_rms_ee_jerk_mps3": float(
             np.mean([row.get("rms_ee_jerk_mps3", 0.0) for row in rows])
@@ -2201,6 +2904,20 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "minimum_end_effector_surface_gap_m": float(
             min(row.get("min_surface_gap", MISSING_DISTANCE_M) for row in rows)
+        ),
+        "minimum_ttc_valid_episode_rate": float(
+            np.mean([bool(row.get("minimum_ttc_valid", False)) for row in rows])
+        ),
+        "mean_minimum_ttc_s_valid_only": float(
+            np.mean(
+                [
+                    float(row["minimum_ttc_s"])
+                    for row in rows
+                    if bool(row.get("minimum_ttc_valid", False))
+                ]
+            )
+            if any(bool(row.get("minimum_ttc_valid", False)) for row in rows)
+            else 0.0
         ),
         "mean_safety_query_time_ms": float(
             sum(
@@ -2356,6 +3073,19 @@ def _obs_flag(obs: Any, field_name: str) -> bool:
     return _obs_scalar(obs, field_name, default=0.0) > 0.5
 
 
+def _minimum_ttc(obs: Any) -> tuple[float, bool]:
+    values: list[float] = []
+    for hand in ("left", "right"):
+        if not _obs_flag(obs, f"{hand}_ttc_valid"):
+            continue
+        value = _obs_scalar(obs, f"{hand}_ttc_s", default=10.0)
+        if np.isfinite(value) and value >= 0.0:
+            values.append(float(value))
+    if not values:
+        return 10.0, False
+    return float(min(values)), True
+
+
 def _source_restoration_row_fields(restoration: dict[str, Any]) -> dict[str, Any]:
     missing = restoration.get("missing_fields", [])
     if not isinstance(missing, list):
@@ -2423,6 +3153,7 @@ def _unavailable_source_episode_row(
         "initial_active_cube_position": [],
         "place_target_position": [],
         "success": False,
+        "terminated": False,
         "truncated": True,
         "steps": 0,
         "total_reward": 0.0,
@@ -2492,7 +3223,12 @@ def _write_csv(path: str, rows: list[dict[str, Any]]) -> None:
         "initial_active_cube_position",
         "place_target_position",
         "success",
+        "terminated",
+        "collision",
         "truncated",
+        "task_terminal_reason",
+        "task_failure_diagnostic_schema",
+        "strict_task_semantics_enabled",
         "steps",
         "total_reward",
         "final_cube_target_dist",
@@ -2504,6 +3240,29 @@ def _write_csv(path: str, rows: list[dict[str, Any]]) -> None:
         "min_hand_gripper_surface_gap",
         "grasped_any",
         "final_has_grasped",
+        "released_after_grasp",
+        "cube_entered_target_tolerance",
+        "maximum_controller_event_reached",
+        "controller_lift_phase_reached",
+        "controller_place_phase_reached",
+        "controller_release_phase_reached",
+        "first_grasp_step",
+        "first_grasp_loss_step",
+        "first_target_entry_step",
+        "first_release_step",
+        "first_success_step",
+        "grasp_acquisition_count",
+        "grasp_loss_count",
+        "release_command_count",
+        "task_phase_paused_steps",
+        "task_phase_reentry_count",
+        "max_consecutive_physical_safety_intervention_steps",
+        "physical_safety_intervention_steps_before_grasp",
+        "physical_safety_intervention_steps_during_transport",
+        "physical_safety_intervention_steps_during_place",
+        "strict_task_semantics_config",
+        "strict_task_semantics_final_state",
+        "strict_task_semantics_last_decision",
         "errp_count",
         "errp_feedback_sum",
         "mean_errp_feedback",
@@ -2536,6 +3295,7 @@ def _write_csv(path: str, rows: list[dict[str, Any]]) -> None:
         "near_miss_steps",
         "geometry_valid_steps",
         "collision_event_count",
+        "collision_max_consecutive_steps",
         "collision_rate",
         "near_rate",
         "near_miss_rate",
@@ -2543,6 +3303,13 @@ def _write_csv(path: str, rows: list[dict[str, Any]]) -> None:
         "geometry_valid_rate",
         "min_surface_gap",
         "minimum_end_effector_surface_gap_m",
+        "minimum_ttc_s",
+        "minimum_ttc_valid",
+        "physics_dt_s",
+        "completion_time_s",
+        "collision_duration_s",
+        "collision_max_consecutive_duration_s",
+        "near_human_duration_s",
         "mean_safety_query_time_ms",
         "closest_link_counts",
         "collision_link_counts",
@@ -2550,19 +3317,29 @@ def _write_csv(path: str, rows: list[dict[str, Any]]) -> None:
         "physical_safety_active_count",
         "physical_safety_active_rate",
         "physical_safety_feasible_rate",
+        "physical_safety_intervention_available_count",
+        "physical_safety_intervention_available_rate",
         "physical_safety_intervention_count",
         "physical_safety_intervention_rate",
         "mean_physical_safety_intervention_norm_radps",
         "max_physical_safety_intervention_norm_radps",
         "mean_physical_safety_slack_radps",
         "max_physical_safety_slack_radps",
+        "mean_physical_safety_slack_mps",
+        "max_physical_safety_slack_mps",
+        "mean_physical_safety_constraint_violation_before_mps",
+        "max_physical_safety_constraint_violation_before_mps",
+        "mean_physical_safety_constraint_violation_after_mps",
+        "max_physical_safety_constraint_violation_after_mps",
         "mean_physical_safety_solve_time_ms",
         "ee_path_length_m",
         "ee_motion_duration_s",
         "mean_ee_speed_mps",
         "max_ee_speed_mps",
+        "mean_ee_acceleration_mps2",
         "rms_ee_acceleration_mps2",
         "max_ee_acceleration_mps2",
+        "mean_ee_jerk_mps3",
         "rms_ee_jerk_mps3",
         "p95_ee_jerk_mps3",
         "max_ee_jerk_mps3",
@@ -2599,6 +3376,14 @@ def _write_csv(path: str, rows: list[dict[str, Any]]) -> None:
             csv_row["collision_link_counts"] = json.dumps(
                 row.get("collision_link_counts", {}), sort_keys=True
             )
+            for diagnostic_field in (
+                "strict_task_semantics_config",
+                "strict_task_semantics_final_state",
+                "strict_task_semantics_last_decision",
+            ):
+                csv_row[diagnostic_field] = json.dumps(
+                    row.get(diagnostic_field, {}), sort_keys=True
+                )
             writer.writerow(csv_row)
 
 
@@ -2611,6 +3396,57 @@ def _write_step_csv(path: str, rows: list[dict[str, Any]]) -> None:
         "seed",
         "step",
         "sim_time",
+        "controller_event_before",
+        "controller_event_after",
+        "controller_t_before",
+        "controller_t_after",
+        "task_phase_before",
+        "task_phase_after",
+        "phase_hold_steps",
+        "task_phase_advanced",
+        "task_phase_paused",
+        "task_phase_reentry",
+        "task_phase_control_reason",
+        "task_action_x",
+        "task_action_y",
+        "task_action_z",
+        "task_action_yaw",
+        "task_action_gripper",
+        "gripper_command",
+        "gripper_closed",
+        "gripper_width_m",
+        "has_grasped_cube",
+        "grasp_acquired",
+        "grasp_lost",
+        "release_commanded",
+        "ee_cube_dist_m",
+        "cube_target_dist_m",
+        "cube_target_xy_error_m",
+        "cube_target_z_error_m",
+        "post_cube_x",
+        "post_cube_y",
+        "post_cube_z",
+        "cube_speed_mps",
+        "cube_speed_valid",
+        "step_success",
+        "step_truncated",
+        "task_terminal_reason",
+        "strict_task_semantics_enabled",
+        "strict_success_latched",
+        "strict_failure_reason",
+        "strict_transition_reason",
+        "strict_transition_held",
+        "strict_retry_started",
+        "strict_transition_reentry",
+        "strict_grasp_retry_count",
+        "strict_phase_reentry_count",
+        "strict_phase_hold_total_steps",
+        "strict_place_ready_latched",
+        "strict_place_ready_streak",
+        "strict_release_settle_streak",
+        "strict_cbf_pause_steps",
+        "strict_task_semantics_state_json",
+        "strict_task_semantics_last_decision_json",
         "encounter_id",
         "encounter_target_severity",
         "encounter_active",
@@ -2690,14 +3526,23 @@ def _write_step_csv(path: str, rows: list[dict[str, Any]]) -> None:
         "errp_penalty",
         "physical_safety_controller",
         "physical_safety_active",
+        "physical_safety_intervened",
         "physical_safety_intervention_available",
+        "physical_safety_valid_hand_count",
+        "physical_safety_tracked_hand_count",
+        "physical_safety_fallback_applied",
+        "physical_safety_failure_reasons_json",
+        "intentional_human_absence",
         "physical_safety_constraint_count",
         "physical_safety_intervention_norm_radps",
         "physical_safety_nominal_velocity_norm_radps",
         "physical_safety_filtered_velocity_norm_radps",
         "physical_safety_constraint_violation_before",
+        "physical_safety_constraint_violation_before_mps",
         "physical_safety_constraint_violation_after",
+        "physical_safety_constraint_violation_after_mps",
         "physical_safety_slack_radps",
+        "physical_safety_slack_mps",
         "physical_safety_min_predicted_gap_m",
         "physical_safety_feasible",
         "physical_safety_status",
