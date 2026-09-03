@@ -18,6 +18,7 @@ _EXCLUDED_DIRS = {
     "videos",
     "gripper_camera_recording",
     "legacy_pre_distal_collider",
+    "ac_selective_smoothing_feedback_data",
 }
 _INVALID_VERSION_VALUES = {"", "unknown", "unspecified", "none", "null"}
 

@@ -34,3 +34,4 @@ v3_chan/policies/*.hdf5
 v3_chan/policies/*.h5
 v3_chan/session_samples.csv
 v3_chan/errp_markers.csv
+v3_chan/ac_selective_smoothing_feedback_data/

@@ -28,6 +28,22 @@ def test_source_hash_is_stable_and_ignores_output_directories(tmp_path):
     assert source_tree_sha256(root) == first
 
 
+def test_source_hash_ignores_ac_feedback_video_sidecars(tmp_path):
+    root = _source_tree(tmp_path)
+    first = source_tree_sha256(root)
+    frames = (
+        root
+        / "v3_chan"
+        / "ac_selective_smoothing_feedback_data"
+        / "session_spectator_frames"
+    )
+    frames.mkdir(parents=True)
+    (frames / "encode_mp4.sh").write_text(
+        "#!/usr/bin/env bash\necho generated\n", encoding="ascii"
+    )
+    assert source_tree_sha256(root) == first
+
+
 def test_source_hash_changes_with_runnable_source(tmp_path):
     root = _source_tree(tmp_path)
     first = source_tree_sha256(root)

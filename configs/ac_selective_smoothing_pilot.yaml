@@ -1,0 +1,229 @@
+{
+  "schema_version": "bc_cbf_recovery_ac_explicit_feedback_v1",
+  "protocol_version": "ac_selective_smoothing_pilot_v1",
+  "study": {
+    "mode": "minimal_pilot",
+    "available_modes": {
+      "minimal_pilot": {
+        "evaluated_trials": 16,
+        "anchor_repeat_trials": 0
+      },
+      "pilot_with_anchors": {
+        "evaluated_trials": 20,
+        "anchor_repeat_trials": 4
+      }
+    },
+    "pilot": true,
+    "practice_trials": 4,
+    "evaluated_trials": 16,
+    "anchor_repeat_trials": 0,
+    "participant_count_target": 5,
+    "feedback_changes_schedule": false,
+    "condition_blinding": true
+  },
+  "policy": {
+    "checkpoint": "v3_chan/policies/bc_pick_place_v2_release_settle.pt",
+    "sha256": "d0fe9f9dc48a6049b77c8e1eab6de0905197207bb57ff858e0d7d332172b5230",
+    "mode": "frozen_direct_bc",
+    "frozen": true,
+    "observation_dim": 84,
+    "observation_version": "obs_v1_state_controller_phase",
+    "action_dim": 5,
+    "action_version": "action_v1_controller_target_delta",
+    "human_observations_masked": true,
+    "online_updates": false,
+    "fine_tuning": false
+  },
+  "conditions": {
+    "A_reactive": {
+      "objective_mode": "joint_nominal",
+      "lambda_s": 0.0
+    },
+    "C_smooth": {
+      "objective_mode": "smooth_intervention",
+      "lambda_s": 4.0
+    }
+  },
+  "shared_cbf": {
+    "controller": "cbf",
+    "safe_gap_m": 0.05,
+    "activation_gap_m": 0.13,
+    "gamma_per_s": 8.0,
+    "prediction_horizon_s": 0.15,
+    "max_prediction_buffer_m": 0.08,
+    "max_joint_speed_rad_s": 2.0,
+    "fail_closed_on_invalid_active_hand": true,
+    "stop_on_infeasible": true,
+    "parameter_adaptation": false
+  },
+  "task": {
+    "cube_count": 1,
+    "bc_feasible_layout_required": true,
+    "accepted_layout_group": "bc_feasible_main",
+    "failed_layout_group": "bc_infeasible_diagnostic",
+    "strict_semantics": "physical_event_driven_pick_place_v5",
+    "state_aware_recovery": true,
+    "state_aware_recovery_schema": "state_aware_pick_place_recovery_bridge_v3",
+    "recovery_fixed": true,
+    "pseudo_errp_enabled": false,
+    "complete_task_after_query": true,
+    "phase_event_map": {
+      "reach_approach": [0, 1, 2],
+      "grasp_lift": [3, 4],
+      "transport": [5],
+      "place_release": [6, 7]
+    },
+    "crossing_trigger_event": {
+      "reach_approach": 0,
+      "grasp_lift": 4,
+      "transport": 5,
+      "place_release": 6
+    },
+    "task_progression_paused_during_query": true,
+    "physics_remains_on_during_query": true,
+    "cbf_remains_on_during_query": true,
+    "safe_hold_during_query": true
+  },
+  "severity": {
+    "shallow": {
+      "planned_minimum_gap_range_m": [0.08, 0.12],
+      "target_gap_m": 0.10
+    },
+    "threat": {
+      "planned_minimum_gap_range_m": [0.00, 0.04],
+      "target_gap_m": 0.02
+    }
+  },
+  "crossing": {
+    "corridor_length_m": 0.48,
+    "corridor_radius_m": 0.045,
+    "start_radius_m": 0.075,
+    "end_radius_m": 0.075,
+    "maximum_path_deviation_m": 0.08,
+    "minimum_progress_fraction": 0.90,
+    "maximum_reverse_progress_m": 0.06,
+    "speed_target_m_s": {
+      "slow": 0.18,
+      "fast": 0.36
+    },
+    "speed_tolerance_fraction": 0.45,
+    "cue_lead_s": 1.0,
+    "crossing_timeout_s": 8.0,
+    "neutral_clear_gap_m": 0.15,
+    "neutral_confirmation_frames": 6,
+    "protected_distal_links": [
+      "panda_link6",
+      "panda_link7",
+      "panda_link8",
+      "panda_hand",
+      "panda_leftfinger",
+      "panda_rightfinger"
+    ],
+    "proximal_link_tokens": [
+      "panda_link0",
+      "panda_link1",
+      "panda_link2",
+      "panda_link3",
+      "panda_link4",
+      "panda_link5"
+    ],
+    "off_protocol_action": "mark_off_protocol_and_analysis_exclude"
+  },
+  "nominal_bc_reference": {
+    "semantics": "bc_only_cue_latched_then_task_advancing_time_aligned_protected_surface_sweep_v1",
+    "trigger_state_semantics": "bc_only_phase_trigger_state_on_accepted_layout_v1",
+    "maximum_ee_position_error_m": 0.03,
+    "maximum_arm_joint_error_rad": 0.10,
+    "maximum_start_gap_error_m": 0.03,
+    "candidate_outward_offset_range_m": [-0.20, 0.30],
+    "candidate_outward_offset_step_m": 0.02,
+    "sweep_sample_interval_s": 0.03,
+    "maximum_sweep_sample_interval_s": 0.04,
+    "minimum_trajectory_samples": 16,
+    "minimum_pre_cue_start_gap_m": 0.15
+  },
+  "layout_precheck": {
+    "required": true,
+    "controller": "bc_only",
+    "maximum_candidate_attempts": 12,
+    "maximum_steps": 4500,
+    "hands_clear_gap_m": 0.15,
+    "hands_clear_confirmation_frames": 6,
+    "failed_group": "bc_infeasible_diagnostic",
+    "accepted_group": "bc_feasible_main"
+  },
+  "response_episode": {
+    "onset_intervention_rad_s": 0.05,
+    "onset_confirmation_frames": 3,
+    "stable_intervention_rad_s": 0.01,
+    "stable_duration_s": 0.5,
+    "maximum_duration_s": 20.0
+  },
+  "feedback": {
+    "haptics_enabled": false,
+    "input_device": "vr_controller",
+    "query_timeout_s": 90.0,
+    "debounce_release_frames": 3,
+    "participant_language": "ko",
+    "condition_identity_visible": false,
+    "realtime_markers": {
+      "crossing_left": {
+        "realtime_safety_concern": "right.a",
+        "realtime_behavior_anomaly": "right.b"
+      },
+      "crossing_right": {
+        "realtime_safety_concern": "left.x",
+        "realtime_behavior_anomaly": "left.y"
+      }
+    },
+    "questionnaire_navigation": {
+      "previous": "left.x",
+      "next": "left.y",
+      "select": "right.a",
+      "confirm": "right.b",
+      "back_chord": ["left.x", "left.y"],
+      "emergency_abort_chord": ["right.a", "right.b"],
+      "emergency_abort_hold_s": 2.0
+    },
+    "questions": {
+      "q1": "같은 상황에서 방금 로봇 반응을 다시 사용한다면 수정이 필요합니까?",
+      "q2": "방금 로봇 반응에서 손과 충돌하거나 지나치게 가까워질 위험을 얼마나 느꼈습니까?",
+      "q3": "방금 로봇 움직임이 갑작스럽거나 예측하기 어려웠습니까?",
+      "q4": "방금 safety response가 필요 이상으로 오래 지속되었다고 느꼈습니까?",
+      "q5": "방금 로봇 반응이 원래 pick-and-place 진행을 얼마나 방해했다고 느꼈습니까?",
+      "q6": "방금 판단에 얼마나 확신합니까?"
+    },
+    "q1_responses": [
+      "needs_modification",
+      "acceptable_as_is",
+      "uncertain"
+    ],
+    "modification_reasons": [
+      "too_close_or_late",
+      "excessive_or_unnecessary_motion",
+      "abrupt_or_unpredictable",
+      "response_too_long",
+      "inappropriate_direction",
+      "recovery_or_task_resumption_problem",
+      "grasp_place_release_disruption",
+      "other"
+    ],
+    "no_marker_semantics": "missing_evidence_not_acceptable",
+    "uncertain_semantics": "abstain",
+    "timeout_semantics": "missing_abstain"
+  },
+  "recording": {
+    "hdf5_enabled": true,
+    "spectator_video_enabled": false,
+    "camera_prim_path": "/World/ACFeedbackSpectatorCamera",
+    "resolution": [1280, 720],
+    "fps": 20,
+    "capture_interval_steps": 3
+  },
+  "tracking": {
+    "maximum_pose_age_ms": 100.0,
+    "minimum_valid_fraction": 0.90,
+    "startup_stable_frames": 6,
+    "input_discovery_required": true
+  }
+}

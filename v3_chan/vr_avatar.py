@@ -460,6 +460,22 @@ class VRAvatar:
     def get_cached_xr_device(self, xr_path: str):
         return self._devices.get(xr_path)
 
+    def get_cached_xr_device_for_logical_hand(self, hand: str):
+        """Return the pose-consistent controller device for a logical hand."""
+
+        logical_hand = str(hand).strip().lower()
+        if logical_hand not in ("left", "right"):
+            raise ValueError("logical hand must be 'left' or 'right'")
+        return self.get_cached_xr_device(xr_path_for_hand(logical_hand))
+
+    def get_xr_path_for_logical_hand(self, hand: str) -> str:
+        """Return the physical XR path after applying the hand-swap mapping."""
+
+        logical_hand = str(hand).strip().lower()
+        if logical_hand not in ("left", "right"):
+            raise ValueError("logical hand must be 'left' or 'right'")
+        return xr_path_for_hand(logical_hand)
+
     def _matrix_translation(self, mat) -> np.ndarray:
         p = mat.ExtractTranslation()
         return np.array([p[0], p[1], p[2]], dtype=float)
