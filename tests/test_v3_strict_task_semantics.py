@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from v3_chan.rl.pick_place_env import IsaacPickPlaceEnv, _task_episode_flags
 from v3_chan.rl.strict_task_semantics import (
     StrictTaskSemanticsConfig,
@@ -29,6 +31,22 @@ def _evidence(
         grasp_candidate=grasp,
         cbf_intervention_norm_radps=intervention,
     )
+
+
+def _apply_authorized_release_open(
+    controller: StrictTaskSemanticsController,
+) -> None:
+    """Record the guarded event-7 OPEN that precedes strict settling."""
+
+    assert controller.release_command_allowed() is True
+    applied = controller.notify_gripper_command_applied(
+        event=7,
+        command="open",
+        grasp_candidate_before_command=True,
+    )
+    assert applied is True
+    assert controller.state.release_command_applied is True
+    assert controller.release_command_allowed() is False
 
 
 def test_unconfirmed_grasp_never_advances_to_lift_and_then_fails() -> None:
@@ -270,6 +288,7 @@ def test_release_settling_is_confirmed_before_success_latches() -> None:
     controller.state.maximum_cube_lift_m = 0.06
     controller.state.grasp_observed = True
     controller.state.place_ready_latched = True
+    _apply_authorized_release_open(controller)
     settled = _evidence(
         grasp=False,
         cube_z=0.32,
@@ -299,6 +318,182 @@ def test_release_settling_is_confirmed_before_success_latches() -> None:
     assert second.success_latched is True
     assert second.event == 10
     assert controller.state.success_latched is True
+
+
+def test_accidental_drop_at_target_without_open_cannot_latch_success() -> None:
+    controller = StrictTaskSemanticsController(
+        StrictTaskSemanticsConfig(
+            enabled=True,
+            release_settle_confirmation_steps=1,
+            release_settle_timeout_steps=2,
+        )
+    )
+    controller.reset(initial_cube_z_m=0.30)
+    controller.state.maximum_cube_lift_m = 0.06
+    controller.state.grasp_observed = True
+    controller.state.place_ready_latched = True
+    dropped_at_target = _evidence(
+        grasp=False,
+        cube_z=0.32,
+        xy=0.02,
+        z_error=0.01,
+        speed=0.01,
+    )
+
+    held = controller.update(
+        event=7,
+        progress=0.0,
+        proposed_event=7,
+        proposed_progress=0.1,
+        terminal_event=10,
+        evidence=dropped_at_target,
+    )
+    failed = controller.update(
+        event=7,
+        progress=0.0,
+        proposed_event=7,
+        proposed_progress=0.1,
+        terminal_event=10,
+        evidence=dropped_at_target,
+    )
+
+    assert held.event == 7
+    assert held.held is True
+    assert held.reason == "hold_for_release_command_application"
+    assert held.success_latched is False
+    assert controller.state.release_settle_streak == 0
+    assert controller.state.release_command_applied is False
+    assert failed.event == 10
+    assert failed.failure_reason == "release_not_commanded"
+    assert failed.success_latched is False
+
+
+def test_release_open_notification_rejects_invalid_provenance() -> None:
+    controller = StrictTaskSemanticsController(
+        StrictTaskSemanticsConfig(enabled=True)
+    )
+    controller.reset(initial_cube_z_m=0.30)
+    controller.state.place_ready_latched = True
+
+    assert controller.notify_gripper_command_applied(
+        event=6,
+        command="open",
+        grasp_candidate_before_command=True,
+    ) is False
+    assert controller.notify_gripper_command_applied(
+        event=7,
+        command="close",
+        grasp_candidate_before_command=True,
+    ) is False
+    assert controller.notify_gripper_command_applied(
+        event=7,
+        command="open",
+        grasp_candidate_before_command=False,
+    ) is False
+    assert controller.state.last_transition_reason == (
+        "release_open_after_grasp_loss_rejected"
+    )
+    assert controller.state.release_command_applied is False
+
+    with pytest.raises(ValueError, match="grasp candidate before release"):
+        controller.notify_gripper_command_applied(
+            event=7,
+            command="open",
+            grasp_candidate_before_command=1,  # type: ignore[arg-type]
+        )
+
+    controller.state.place_ready_latched = False
+    with pytest.raises(RuntimeError, match="without a valid release gate"):
+        controller.notify_gripper_command_applied(
+            event=7,
+            command="open",
+            grasp_candidate_before_command=True,
+        )
+    assert controller.state.release_command_applied is False
+
+
+def test_release_latch_resets_and_restores_with_controller_state() -> None:
+    config = StrictTaskSemanticsConfig(enabled=True, state_aware_recovery=True)
+    controller = StrictTaskSemanticsController(config)
+    controller.reset(initial_cube_z_m=0.30)
+    controller.state.place_ready_latched = True
+    _apply_authorized_release_open(controller)
+    captured = controller.state.as_dict()
+
+    controller.reset(initial_cube_z_m=0.31)
+    assert controller.state.release_command_applied is False
+
+    restored = StrictTaskSemanticsController(config)
+    restored.restore_state(captured)
+    assert restored.state.release_command_applied is True
+    assert restored.release_command_allowed() is False
+
+    restored.begin_recovery(
+        mode="place",
+        evidence=_evidence(grasp=True, cube_z=0.36),
+    )
+    assert restored.state.release_command_applied is False
+
+    restored.state.place_ready_latched = True
+    _apply_authorized_release_open(restored)
+    restored.recovery_handoff(
+        event=6,
+        progress=0.0,
+        mode="place",
+        evidence=_evidence(grasp=True, cube_z=0.36),
+        event_before=6,
+        progress_before=0.5,
+    )
+    assert restored.state.release_command_applied is False
+
+    legacy_state = dict(captured)
+    legacy_state.pop("release_command_applied")
+    legacy = StrictTaskSemanticsController(config)
+    legacy.restore_state(legacy_state)
+    assert legacy.state.release_command_applied is False
+
+
+def test_external_reentry_requires_confirmed_grasp_or_actual_release() -> None:
+    config = StrictTaskSemanticsConfig(
+        enabled=True,
+        grasp_lost_confirmation_steps=2,
+    )
+
+    attached = StrictTaskSemanticsController(config)
+    attached.reset(initial_cube_z_m=0.30)
+    assert attached.classify_external_reentry(
+        event=6,
+        evidence=_evidence(grasp=True, cube_z=0.36),
+    ) == "place"
+
+    released = StrictTaskSemanticsController(config)
+    released.reset(initial_cube_z_m=0.30)
+    released.state.place_ready_latched = True
+    _apply_authorized_release_open(released)
+    assert released.classify_external_reentry(
+        event=7,
+        evidence=_evidence(
+            grasp=False,
+            cube_z=0.32,
+            xy=0.02,
+            z_error=0.01,
+            speed=0.01,
+        ),
+    ) == "released"
+
+    missing = StrictTaskSemanticsController(config)
+    missing.reset(initial_cube_z_m=0.30)
+    missing.state.grasp_observed = True
+    missing_evidence = _evidence(grasp=False, cube_z=0.31)
+    assert missing.classify_external_reentry(
+        event=7,
+        evidence=missing_evidence,
+    ) == "wait"
+    assert missing.classify_external_reentry(
+        event=7,
+        evidence=missing_evidence,
+    ) == "regrasp"
+    assert missing.state.release_command_applied is False
 
 
 def test_cbf_pause_uses_hysteresis_then_reenters() -> None:
@@ -357,11 +552,59 @@ def test_current_step_cbf_blocks_release_before_action_is_applied() -> None:
         intervention_norm_radps=0.05
     )
     env._last_obs = {"has_grasped_cube": [1.0]}
+    env._strict_task_controller = StrictTaskSemanticsController(
+        env._strict_task_semantics_config
+    )
+    env._strict_task_controller.reset(initial_cube_z_m=0.30)
+    env._strict_task_controller.state.place_ready_latched = True
 
     command = env._guard_strict_release_for_current_cbf("open")
+    notified = env._strict_task_controller.notify_gripper_command_applied(
+        event=env.phase_event,
+        command=command,
+        grasp_candidate_before_command=True,
+    )
+
+    assert command is None
+    assert notified is False
+    assert env._strict_task_controller.state.release_command_applied is False
+    assert env.gripper_closed is True
+
+
+def test_strict_policy_gripper_blocks_open_while_object_is_grasped_before_release() -> None:
+    env = object.__new__(IsaacPickPlaceEnv)
+    env.config = SimpleNamespace(strict_task_semantics=True, gripper_mode="policy")
+    env.phase_event = 3
+    env.gripper_closed = True
+    env._strict_task_controller = SimpleNamespace(
+        release_command_allowed=lambda: False
+    )
+
+    command = env._gripper_command(
+        [0.0, 0.0, 0.0, 0.0, 1.0],
+        {"has_grasped_cube": [1.0]},
+    )
 
     assert command is None
     assert env.gripper_closed is True
+
+
+def test_strict_policy_gripper_keeps_policy_owned_open_at_ready_release() -> None:
+    env = object.__new__(IsaacPickPlaceEnv)
+    env.config = SimpleNamespace(strict_task_semantics=True, gripper_mode="policy")
+    env.phase_event = 7
+    env.gripper_closed = True
+    env._strict_task_controller = SimpleNamespace(
+        release_command_allowed=lambda: True
+    )
+
+    command = env._gripper_command(
+        [0.0, 0.0, 0.0, 0.0, 1.0],
+        {"has_grasped_cube": [1.0]},
+    )
+
+    assert command == "open"
+    assert env.gripper_closed is False
 
 
 def test_current_step_release_guard_preserves_safe_and_legacy_open() -> None:
@@ -434,6 +677,7 @@ def test_released_cube_settling_is_not_blocked_by_cbf_intervention() -> None:
     controller.state.maximum_cube_lift_m = 0.06
     controller.state.grasp_observed = True
     controller.state.place_ready_latched = True
+    _apply_authorized_release_open(controller)
     controller.state.cbf_hold_latched = True
 
     def released_evidence(intervention: float) -> TaskPhysicalEvidence:
@@ -623,3 +867,394 @@ def test_cbf_reentry_revalidates_guarded_release() -> None:
     assert controller.state.place_ready_latched is False
     assert controller.state.place_ready_streak == 0
     assert controller.release_command_allowed() is False
+
+
+def test_state_aware_cbf_reentry_preserves_attached_near_goal_progress() -> None:
+    controller = StrictTaskSemanticsController(
+        StrictTaskSemanticsConfig(
+            enabled=True,
+            state_aware_recovery=True,
+            place_confirmation_steps=2,
+            cbf_pause_enter_norm_radps=0.05,
+            cbf_pause_exit_norm_radps=0.01,
+            cbf_pause_exit_confirmation_steps=1,
+        )
+    )
+    controller.reset(initial_cube_z_m=0.30)
+    controller.state.maximum_cube_lift_m = 0.06
+    controller.state.grasp_observed = True
+    near_goal = dict(
+        grasp=True,
+        cube_z=0.36,
+        xy=0.007,
+        z_error=0.01,
+        speed=0.01,
+    )
+
+    paused = controller.update(
+        event=6,
+        progress=0.91,
+        proposed_event=7,
+        proposed_progress=0.0,
+        terminal_event=10,
+        evidence=_evidence(**near_goal, intervention=0.06),
+    )
+    reentered = controller.update(
+        event=6,
+        progress=0.91,
+        proposed_event=7,
+        proposed_progress=0.0,
+        terminal_event=10,
+        evidence=_evidence(**near_goal, intervention=0.0),
+    )
+
+    assert paused.event == 6
+    assert paused.progress == 0.91
+    assert paused.held is True
+    assert reentered.event == 6
+    assert reentered.progress == 0.91
+    assert reentered.reentry is True
+    assert reentered.held is False
+    assert reentered.recovery_request == "none"
+    assert reentered.reason == "cbf_reentry_preserve_place_progress"
+
+    first_confirmation = controller.update(
+        event=6,
+        progress=0.91,
+        proposed_event=7,
+        proposed_progress=0.0,
+        terminal_event=10,
+        evidence=_evidence(**near_goal),
+    )
+    released = controller.update(
+        event=6,
+        progress=0.91,
+        proposed_event=7,
+        proposed_progress=0.0,
+        terminal_event=10,
+        evidence=_evidence(**near_goal),
+    )
+
+    assert first_confirmation.event == 6
+    assert controller.release_command_allowed() is True
+    assert released.event == 7
+    assert released.reason == "event_driven_release_after_place_confirmation"
+
+
+def test_state_aware_cbf_reentry_requests_place_bridge_without_event5_rewind() -> None:
+    controller = StrictTaskSemanticsController(
+        StrictTaskSemanticsConfig(
+            enabled=True,
+            state_aware_recovery=True,
+            cbf_pause_enter_norm_radps=0.05,
+            cbf_pause_exit_norm_radps=0.01,
+            cbf_pause_exit_confirmation_steps=1,
+        )
+    )
+    controller.reset(initial_cube_z_m=0.30)
+    controller.state.maximum_cube_lift_m = 0.06
+    controller.state.grasp_observed = True
+    far_from_goal = dict(
+        grasp=True,
+        cube_z=0.36,
+        xy=0.20,
+        z_error=0.10,
+        speed=0.01,
+    )
+
+    controller.update(
+        event=6,
+        progress=0.91,
+        proposed_event=7,
+        proposed_progress=0.0,
+        terminal_event=10,
+        evidence=_evidence(**far_from_goal, intervention=0.06),
+    )
+    reentered = controller.update(
+        event=6,
+        progress=0.91,
+        proposed_event=7,
+        proposed_progress=0.0,
+        terminal_event=10,
+        evidence=_evidence(**far_from_goal, intervention=0.0),
+    )
+
+    assert reentered.event == 6
+    assert reentered.progress == 0.91
+    assert reentered.held is True
+    assert reentered.reentry is True
+    assert reentered.recovery_request == "place"
+    assert reentered.reason == "cbf_reentry_request_place_recovery"
+    assert controller.state.recovery_request_count == 1
+
+
+def test_state_aware_cbf_reentry_requests_current_state_regrasp_after_loss() -> None:
+    controller = StrictTaskSemanticsController(
+        StrictTaskSemanticsConfig(
+            enabled=True,
+            state_aware_recovery=True,
+            grasp_lost_confirmation_steps=1,
+            cbf_pause_enter_norm_radps=0.05,
+            cbf_pause_exit_norm_radps=0.01,
+            cbf_pause_exit_confirmation_steps=1,
+        )
+    )
+    controller.reset(initial_cube_z_m=0.30)
+    controller.state.maximum_cube_lift_m = 0.06
+    controller.state.grasp_observed = True
+
+    controller.update(
+        event=6,
+        progress=0.91,
+        proposed_event=7,
+        proposed_progress=0.0,
+        terminal_event=10,
+        evidence=_evidence(
+            grasp=False,
+            cube_z=0.31,
+            xy=0.20,
+            z_error=0.10,
+            intervention=0.06,
+        ),
+    )
+    reentered = controller.update(
+        event=6,
+        progress=0.91,
+        proposed_event=7,
+        proposed_progress=0.0,
+        terminal_event=10,
+        evidence=_evidence(
+            grasp=False,
+            cube_z=0.31,
+            xy=0.20,
+            z_error=0.10,
+            intervention=0.0,
+        ),
+    )
+
+    assert reentered.event == 6
+    assert reentered.progress == 0.91
+    assert reentered.held is True
+    assert reentered.reentry is True
+    assert reentered.retry_started is False
+    assert reentered.recovery_request == "regrasp"
+    assert reentered.reason == "cbf_reentry_request_regrasp_recovery"
+    assert controller.state.grasp_retry_count == 0
+    assert controller.consume_pending_retry_open() is False
+
+
+def test_state_aware_regrasp_waits_for_confirmed_post_cbf_loss() -> None:
+    controller = StrictTaskSemanticsController(
+        StrictTaskSemanticsConfig(
+            enabled=True,
+            state_aware_recovery=True,
+            grasp_lost_confirmation_steps=3,
+            cbf_pause_enter_norm_radps=0.05,
+            cbf_pause_exit_norm_radps=0.01,
+            cbf_pause_exit_confirmation_steps=1,
+        )
+    )
+    controller.reset(initial_cube_z_m=0.30)
+    controller.state.maximum_cube_lift_m = 0.06
+    controller.state.grasp_observed = True
+    missing = _evidence(
+        grasp=False,
+        cube_z=0.31,
+        xy=0.20,
+        z_error=0.10,
+    )
+
+    controller.update(
+        event=6,
+        progress=0.91,
+        proposed_event=7,
+        proposed_progress=0.0,
+        terminal_event=10,
+        evidence=_evidence(
+            grasp=False,
+            cube_z=0.31,
+            xy=0.20,
+            z_error=0.10,
+            intervention=0.06,
+        ),
+    )
+    unconfirmed = controller.update(
+        event=6,
+        progress=0.91,
+        proposed_event=7,
+        proposed_progress=0.0,
+        terminal_event=10,
+        evidence=missing,
+    )
+    assert unconfirmed.recovery_request == "none"
+    assert unconfirmed.reason == "hold_for_post_cbf_grasp_loss_confirmation"
+
+    confirmed = None
+    for _ in range(2):
+        confirmed = controller.update(
+            event=6,
+            progress=0.91,
+            proposed_event=7,
+            proposed_progress=0.0,
+            terminal_event=10,
+            evidence=missing,
+        )
+    assert confirmed is not None
+    assert confirmed.recovery_request == "regrasp"
+    assert confirmed.reason == "request_regrasp_recovery_after_grasp_lost_before_release"
+
+
+def test_state_aware_place_timeout_requests_bridge_instead_of_event5_replay() -> None:
+    controller = StrictTaskSemanticsController(
+        StrictTaskSemanticsConfig(
+            enabled=True,
+            state_aware_recovery=True,
+            place_confirmation_timeout_steps=1,
+        )
+    )
+    controller.reset(initial_cube_z_m=0.30)
+    controller.state.maximum_cube_lift_m = 0.06
+    controller.state.grasp_observed = True
+    controller.state.cbf_intervention_observed = True
+
+    decision = controller.update(
+        event=6,
+        progress=0.99,
+        proposed_event=7,
+        proposed_progress=0.0,
+        terminal_event=10,
+        evidence=_evidence(
+            grasp=True,
+            cube_z=0.36,
+            xy=0.20,
+            z_error=0.10,
+            speed=0.01,
+        ),
+    )
+
+    assert decision.event == 6
+    assert decision.progress == 0.99
+    assert decision.held is True
+    assert decision.recovery_request == "place"
+    assert decision.reason == "request_place_recovery_after_readiness_timeout"
+
+
+def test_state_aware_completed_event6_requests_place_recovery_immediately() -> None:
+    controller = StrictTaskSemanticsController(
+        StrictTaskSemanticsConfig(
+            enabled=True,
+            state_aware_recovery=True,
+            place_confirmation_timeout_steps=240,
+        )
+    )
+    controller.reset(initial_cube_z_m=0.30)
+    controller.state.maximum_cube_lift_m = 0.06
+    controller.state.grasp_observed = True
+    controller.state.cbf_intervention_observed = True
+
+    decision = controller.update(
+        event=6,
+        progress=1.0,
+        proposed_event=7,
+        proposed_progress=0.0,
+        terminal_event=10,
+        evidence=_evidence(
+            grasp=True,
+            cube_z=0.36,
+            xy=0.20,
+            z_error=0.10,
+            speed=0.01,
+        ),
+    )
+
+    assert decision.event == 6
+    assert decision.progress == 1.0
+    assert decision.held is True
+    assert decision.reentry is True
+    assert decision.recovery_request == "place"
+    assert controller.state.recovery_request_count == 1
+    assert controller.state.place_wait_steps == 0
+    assert controller.state.failure_reason == ""
+
+
+def test_state_aware_recovery_handoff_clears_stale_release_gate() -> None:
+    controller = StrictTaskSemanticsController(
+        StrictTaskSemanticsConfig(enabled=True, state_aware_recovery=True)
+    )
+    controller.reset(initial_cube_z_m=0.30)
+    controller.state.maximum_cube_lift_m = 0.06
+    controller.state.grasp_observed = True
+    controller.state.place_ready_streak = 6
+    controller.state.place_ready_latched = True
+    controller.state.place_wait_steps = 12
+    controller.state.cbf_hold_latched = True
+
+    controller.begin_recovery(
+        mode="place",
+        evidence=_evidence(grasp=True, cube_z=0.36),
+    )
+    handoff = controller.recovery_handoff(
+        event=6,
+        progress=0.0,
+        mode="place",
+        evidence=_evidence(grasp=True, cube_z=0.36),
+        event_before=6,
+        progress_before=0.91,
+    )
+
+    assert handoff.event == 6
+    assert handoff.progress == 0.0
+    assert handoff.reentry is True
+    assert handoff.reason == "state_aware_place_handoff"
+    assert controller.state.cbf_hold_latched is False
+    assert controller.state.place_ready_streak == 0
+    assert controller.state.place_ready_latched is False
+    assert controller.state.place_wait_steps == 0
+    assert controller.release_command_allowed() is False
+
+
+def test_state_aware_success_latch_remains_absorbing_during_later_cbf_signal() -> None:
+    controller = StrictTaskSemanticsController(
+        StrictTaskSemanticsConfig(
+            enabled=True,
+            state_aware_recovery=True,
+            release_settle_confirmation_steps=1,
+        )
+    )
+    controller.reset(initial_cube_z_m=0.30)
+    controller.state.maximum_cube_lift_m = 0.06
+    controller.state.grasp_observed = True
+    controller.state.place_ready_latched = True
+    _apply_authorized_release_open(controller)
+    settled = dict(
+        grasp=False,
+        cube_z=0.32,
+        xy=0.02,
+        z_error=0.01,
+        speed=0.01,
+    )
+
+    success = controller.update(
+        event=7,
+        progress=0.0,
+        proposed_event=7,
+        proposed_progress=0.1,
+        terminal_event=10,
+        evidence=_evidence(**settled),
+    )
+    after_cbf = controller.update(
+        event=7,
+        progress=0.0,
+        proposed_event=7,
+        proposed_progress=0.1,
+        terminal_event=10,
+        evidence=_evidence(**settled, intervention=0.50),
+    )
+
+    assert success.event == 10
+    assert success.success_latched is True
+    assert after_cbf.event == 10
+    assert after_cbf.success_latched is True
+    assert after_cbf.reason == "terminal_success_latched"
+    assert after_cbf.recovery_request == "none"
+    assert controller.state.success_latched is True

@@ -1,0 +1,110 @@
+{
+  "schema_version": "ac_selective_smoothing_runtime_handoff_v1",
+  "purpose": "Frozen BC plus A/C CBF response families and Fixed State-aware Recovery v3 for the public-server explicit-feedback collector",
+  "base_branch": "handoff/bc-cbf-explicit-feedback-v1",
+  "policy": {
+    "path": "v3_chan/policies/bc_pick_place_v2_release_settle.pt",
+    "sha256": "d0fe9f9dc48a6049b77c8e1eab6de0905197207bb57ff858e0d7d332172b5230",
+    "size_bytes": 421408,
+    "mode": "frozen_direct_bc",
+    "observation_dim": 84,
+    "observation_version": "obs_v1_state_controller_phase",
+    "action_dim": 5,
+    "action_version": "action_v1_controller_target_delta",
+    "hidden_dims": [256, 256],
+    "reward_version": "reward_v4_post_release_stability_hri_errp",
+    "mask_human_observations": true
+  },
+  "responses": {
+    "A_reactive": {
+      "objective_mode": "joint_nominal",
+      "correction_smoothness_weight": 0.0,
+      "interpretation": "shorter CBF correction with more abrupt motion"
+    },
+    "C_smooth": {
+      "objective_mode": "smooth_intervention",
+      "correction_smoothness_weight": 4.0,
+      "interpretation": "longer CBF correction tail with smoother motion"
+    },
+    "allowed_collection_conditions": ["A_reactive", "C_smooth"],
+    "participant_blinding_required": true,
+    "online_adaptation_during_collection": false
+  },
+  "shared_cbf": {
+    "controller": "cbf",
+    "safe_gap_m": 0.05,
+    "activation_gap_m": 0.13,
+    "gamma_per_s": 8.0,
+    "prediction_horizon_s": 0.15,
+    "max_prediction_buffer_m": 0.08,
+    "max_joint_speed_rad_s": 2.0,
+    "fail_closed_on_invalid_active_hand": true,
+    "stop_on_infeasible": true,
+    "configured_gap_is_not_an_empirical_5cm_guarantee": true
+  },
+  "task_runtime": {
+    "single_pick": true,
+    "strict_task_semantics_schema": "physical_event_driven_pick_place_v5",
+    "state_aware_recovery_schema": "state_aware_pick_place_recovery_bridge_v3",
+    "gripper_mode": "policy",
+    "fixed_orientation": true,
+    "require_release_for_success": true,
+    "pseudo_errp_enabled": false,
+    "haptics_enabled": false
+  },
+  "qualification": {
+    "report": "docs/cbf_response_family_abc_validation_20260903.md",
+    "report_sha256": "c305f6ee8bad4220d22212704fcd299e232393d1f314be67fa29efda46912ab7",
+    "heldout_A_success": "17/17",
+    "heldout_C_success": "17/17",
+    "heldout_A_human_collision": "0/17",
+    "heldout_C_human_collision": "0/17",
+    "minimum_logged_gap_A_m": 0.03491,
+    "minimum_logged_gap_C_m": 0.03674,
+    "C_EE_jerk_reduction_vs_A_percent": 43.7,
+    "C_joint_jerk_reduction_vs_A_percent": 35.5,
+    "claim_boundary": "A/C are simulation-qualified response candidates; no human preference has been measured."
+  },
+  "files": {
+    "v3_chan/policies/bc_pick_place_v2_release_settle.pt": "d0fe9f9dc48a6049b77c8e1eab6de0905197207bb57ff858e0d7d332172b5230",
+    "v3_chan/evaluate_rollout_policy.py": "55d89da8e550ea6865efa20c1eacb534b069d111e018d7fce49272b15462895d",
+    "v3_chan/physical_safety_controllers.py": "01dd1a1ee2e3b20bb3c1165d42e323089c787e7389e40af2b2f702fe6aa5ced1",
+    "v3_chan/end_effector_safety_geometry.py": "2935135f26489a2fa5992a91ad7fe13f8224997ce90ac747900653db1cff4ac7",
+    "v3_chan/robot_environment_safety.py": "b06bed6d69f2aa532e8cb9ad5a26f6395d2c219920f1d5947300ab0aa914cacd",
+    "v3_chan/trajectory_metrics.py": "6e9c3d30b51ada845730492b8050bcf2b0d6e40ae6abc67d49f683908472b424",
+    "v3_chan/hri_video_recorder.py": "0071378e79c7e7e8b3f1317be0480e6dc4d5e8ef0d7d28b0ae2c8d7b762c3116",
+    "v3_chan/dynamic_safety.py": "d31a1f840c6a4710bda5eb6812463c1ab5aedc88ae1550570c642c40bbefdfac",
+    "v3_chan/scene_randomization.py": "1a2b7dcdfdb7e5b41d6760e7d4d9a796aa5e3d5c0f5ad46cc1164a07873fbf51",
+    "v3_chan/rl/__init__.py": "5daed45e82ebb93a302f75af8aea5240d2330f040271922be8ea7bc998df5179",
+    "v3_chan/rl/actions.py": "e13c0654852f901e96c5d7eb515b42280fb96b5788eaf6dec5cb77f5ef2194bf",
+    "v3_chan/rl/encounter_manifest.py": "969828b668fc6c98776926f79c0687492ed716b92435b2af59e1ba7ad869a44c",
+    "v3_chan/rl/human_replay.py": "7903b82265bf5b8b4c9057e6732273942b817c92e3e7649a20e6c1d4ae6c0f9d",
+    "v3_chan/rl/observations.py": "3cd91f821d1a138cd1916d4b54de3d00c142c260cca2df4e9105559ed6039d67",
+    "v3_chan/rl/policies.py": "f43fc970c54fb4605746d7891872fc2d8715df08127c194bd216d037541ba3a9",
+    "v3_chan/rl/pick_place_env.py": "7b813973e83e518a1f3a2a686c28a32c529a167cc3e527d8a8f81d8e233c83cf",
+    "v3_chan/rl/pick_place_phase.py": "db99996e0172aa228e08d5d646cc1945f4c57a4ca937fd884e05420beebb2c58",
+    "v3_chan/rl/pseudo_errp.py": "17a9ad704fcf4728f21966d04b9825af74e9de88c9091f1231a3e02117e42823",
+    "v3_chan/rl/rewards.py": "f7716d407560054227b21721498c24e221b447439aa77b21f8bb1dbe5c3a6679",
+    "v3_chan/rl/strict_task_semantics.py": "545b1a241058cb639496850a891308278868d7022871b1e2b5b5e8aeb88bd2db",
+    "v3_chan/rl/state_aware_recovery.py": "8b5144fcaf3c1bda577f1d4e8964ca4c085d696a1dccdf11e8a754bf0e3b6063",
+    "v3_chan/run_cbf_response_family_experiment.py": "78868cce5b042f545c4a292c431458ea539410dcabab1a7bc25d170b1355bf45",
+    "v3_chan/analyze_cbf_response_tradeoffs.py": "e174f46d9122ed1add7bafe49481795d70e085c667ff38522e4dd169892a0e1e",
+    "docs/cbf_response_family_abc_validation_20260903.md": "c305f6ee8bad4220d22212704fcd299e232393d1f314be67fa29efda46912ab7",
+    "docs/state_aware_recovery_bridge_validation_20260903.md": "33a7c9ab54c7613b469bb569ac9d604870b48bd569cf3fcb46f02e658e0ce1f6",
+    "v3_chan/trajectories/manifests/p01_v8_22sessions_cv4/fold_01_arch2x2_development_bc_cbf_clean19_v1.json": "0f8ee23a262a28b92a56a7b1244f3fdb7c0869ac0d41829133651345d532f8cd",
+    "v3_chan/trajectories/manifests/p01_v8_22sessions_cv4/fold_01_eval_bc_cbf_clean17_v1.json": "85658d0269efd8592593d55022be286ebcb59a93078f33be9166187c4cc34909",
+    "v3_chan/eval_results/cbf_response_family_v1/dev/frozen_selection.json": "a521ffa4c65cb125846d26550c70725672b9b0527472dff93fc79a548e8990e9",
+    "v3_chan/eval_results/cbf_response_family_v1/heldout/run_manifest.json": "86c91ae05648cf7d55feca2635eb30fb8030bcfad27ee13f1ccb2a886f83249f",
+    "v3_chan/eval_results/cbf_response_family_v1/heldout_tradeoff_analysis/qualification_summary.csv": "c841d664ad114af8d1c2bcaebcd9bcd60d61df0e490c5b70420000ff72df55ac",
+    "v3_chan/eval_results/cbf_response_family_v1/heldout_tradeoff_analysis/condition_tradeoff_summary.csv": "b5e531b400baeee34e4a2a8e63100467d09b0bdce4e8a3ad1e5155e5a95f7d78"
+  },
+  "collection_readiness": {
+    "runtime_handoff_ready": true,
+    "production_collection_ready": false,
+    "locks": [
+      "Implement the dedicated A/C randomized explicit-feedback collector and schema.",
+      "Validate mandatory VR feedback, haptics-off, tracking, and single-crossing contracts.",
+      "Run separate A and C practice trials and the fail-closed collector validator before production."
+    ]
+  }
+}

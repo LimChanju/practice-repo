@@ -240,6 +240,43 @@ DYNAMIC_HRI_OBS_DIM = int(
 DYNAMIC_HRI_OBSERVATION_VERSION = (
     "hri_policy_obs_v2_109d_surface_gap_dynamics"
 )
+
+# The stateful finite-difference action limiter makes the executed backup
+# command depend on two previous decisions.  Keep that controller state in a
+# Backup-only observation contract instead of changing the shared 109-D HRI
+# observation used by the older residual policies.  The Backup policy keeps
+# robot-surface and relative velocity, but omits the algebraically redundant
+# hand velocity because v_hand = v_relative + v_robot_surface.
+BACKUP_LIMITER_ACTION_DIM = 4
+BACKUP_LIMITER_HISTORY_DIM = BACKUP_LIMITER_ACTION_DIM * 2
+BACKUP_OMITTED_DYNAMIC_FIELD_NAMES = (
+    "left_hand_vel_filtered_mps",
+    "right_hand_vel_filtered_mps",
+)
+BACKUP_DYNAMIC_HRI_OBS_FIELD_NAMES = tuple(
+    name
+    for name in DYNAMIC_HRI_OBS_FIELD_NAMES
+    if name not in BACKUP_OMITTED_DYNAMIC_FIELD_NAMES
+)
+BACKUP_DYNAMIC_HRI_OBS_DIM = int(
+    sum(_FIELD_MAP[name].dim for name in HRI_OBS_FIELD_NAMES)
+    + sum(
+        field.dim
+        for field in DYNAMIC_HRI_OBSERVATION_FIELDS
+        if field.name not in BACKUP_OMITTED_DYNAMIC_FIELD_NAMES
+    )
+)
+
+# Preserve the previous 117-D contract so existing checkpoints and generated
+# risk datasets remain reproducible.
+LEGACY_BACKUP_OBS_DIM = DYNAMIC_HRI_OBS_DIM + BACKUP_LIMITER_HISTORY_DIM
+LEGACY_BACKUP_OBSERVATION_VERSION = (
+    "backup_policy_obs_v3_117d_surface_gap_dynamics_limiter_history"
+)
+BACKUP_OBS_DIM = BACKUP_DYNAMIC_HRI_OBS_DIM + BACKUP_LIMITER_HISTORY_DIM
+BACKUP_OBSERVATION_VERSION = (
+    "backup_policy_obs_v4_111d_surface_relative_dynamics_limiter_history"
+)
 _DYNAMIC_FIELD_MAP = {
     field.name: field for field in DYNAMIC_HRI_OBSERVATION_FIELDS
 }
@@ -302,6 +339,203 @@ def flatten_dynamic_hri_observation(
         dtype=dtype,
         field_names=DYNAMIC_HRI_OBS_FIELD_NAMES,
     )
+
+
+def flatten_backup_dynamic_observation(
+    obs: Mapping[str, np.ndarray], dtype=np.float32
+) -> np.ndarray:
+    """Build the compact Backup-only dynamic state without hand velocity."""
+
+    result = flatten_hri_observation(
+        obs,
+        dtype=dtype,
+        field_names=BACKUP_DYNAMIC_HRI_OBS_FIELD_NAMES,
+    )
+    if result.shape != (BACKUP_DYNAMIC_HRI_OBS_DIM,):
+        raise RuntimeError(
+            "Compact Backup dynamic observation shape mismatch: "
+            f"{result.shape} != {(BACKUP_DYNAMIC_HRI_OBS_DIM,)}"
+        )
+    return result
+
+
+def flatten_backup_observation(
+    obs: Mapping[str, np.ndarray],
+    *,
+    previous_executed_action: np.ndarray,
+    previous_action_delta: np.ndarray,
+    dtype=np.float32,
+) -> np.ndarray:
+    """Build the Markov Backup observation used with the 4-D limiter.
+
+    The tail is ``[a_{t-1}, a_{t-1} - a_{t-2}]`` in normalized Backup-action
+    coordinates.  It is deliberately not added to the recorded HDF5 schema.
+    """
+
+    previous = np.asarray(previous_executed_action, dtype=dtype).reshape(-1)
+    delta = np.asarray(previous_action_delta, dtype=dtype).reshape(-1)
+    expected = int(BACKUP_LIMITER_ACTION_DIM)
+    if previous.size != expected or delta.size != expected:
+        raise ValueError(
+            "Backup limiter history requires exactly "
+            f"{expected} values per vector; got {previous.size} and {delta.size}"
+        )
+    if not np.all(np.isfinite(previous)) or not np.all(np.isfinite(delta)):
+        raise ValueError("Backup limiter history must contain only finite values")
+    result = np.concatenate(
+        (flatten_backup_dynamic_observation(obs, dtype=dtype), previous, delta),
+        axis=0,
+    ).astype(dtype, copy=False)
+    if result.shape != (BACKUP_OBS_DIM,):
+        raise RuntimeError(
+            f"Backup observation shape mismatch: {result.shape} != {(BACKUP_OBS_DIM,)}"
+        )
+    return result
+
+
+def flatten_legacy_backup_observation(
+    obs: Mapping[str, np.ndarray],
+    *,
+    previous_executed_action: np.ndarray,
+    previous_action_delta: np.ndarray,
+    dtype=np.float32,
+) -> np.ndarray:
+    """Build the former 117-D observation for checkpoint compatibility."""
+
+    previous = np.asarray(previous_executed_action, dtype=dtype).reshape(-1)
+    delta = np.asarray(previous_action_delta, dtype=dtype).reshape(-1)
+    expected = int(BACKUP_LIMITER_ACTION_DIM)
+    if previous.size != expected or delta.size != expected:
+        raise ValueError(
+            "Backup limiter history requires exactly "
+            f"{expected} values per vector; got {previous.size} and {delta.size}"
+        )
+    if not np.all(np.isfinite(previous)) or not np.all(np.isfinite(delta)):
+        raise ValueError("Backup limiter history must contain only finite values")
+    result = np.concatenate(
+        (flatten_dynamic_hri_observation(obs, dtype=dtype), previous, delta),
+        axis=0,
+    ).astype(dtype, copy=False)
+    if result.shape != (LEGACY_BACKUP_OBS_DIM,):
+        raise RuntimeError(
+            "Legacy Backup observation shape mismatch: "
+            f"{result.shape} != {(LEGACY_BACKUP_OBS_DIM,)}"
+        )
+    return result
+
+
+def flatten_backup_policy_observation(
+    obs: Mapping[str, np.ndarray],
+    *,
+    observation_dim: int,
+    previous_executed_action: np.ndarray | None = None,
+    previous_action_delta: np.ndarray | None = None,
+    dtype=np.float32,
+) -> np.ndarray:
+    """Flatten a supported shared or Backup-only observation contract."""
+
+    requested_dim = int(observation_dim)
+    if requested_dim == DYNAMIC_HRI_OBS_DIM:
+        return flatten_dynamic_hri_observation(obs, dtype=dtype)
+    supported_limiter_dims = (BACKUP_OBS_DIM, LEGACY_BACKUP_OBS_DIM)
+    if requested_dim not in supported_limiter_dims:
+        raise ValueError(
+            "Unsupported Backup observation dimension: "
+            f"{requested_dim}; expected {DYNAMIC_HRI_OBS_DIM}, "
+            f"{BACKUP_OBS_DIM}, or {LEGACY_BACKUP_OBS_DIM}"
+        )
+    if previous_executed_action is None or previous_action_delta is None:
+        raise ValueError(
+            "A limiter-aware Backup observation requires finite limiter history"
+        )
+    if requested_dim == LEGACY_BACKUP_OBS_DIM:
+        return flatten_legacy_backup_observation(
+            obs,
+            previous_executed_action=previous_executed_action,
+            previous_action_delta=previous_action_delta,
+            dtype=dtype,
+        )
+    return flatten_backup_observation(
+        obs,
+        previous_executed_action=previous_executed_action,
+        previous_action_delta=previous_action_delta,
+        dtype=dtype,
+    )
+
+
+def restore_dynamic_hri_observations_from_backup(
+    observations: np.ndarray,
+    *,
+    dtype=np.float32,
+) -> np.ndarray:
+    """Restore the shared 109-D HRI state from a Backup-policy batch.
+
+    The compact 111-D Backup contract stores 103 physical/HRI features plus
+    eight limiter-history values. It omits filtered hand velocity because it
+    is exactly recoverable as ``relative velocity + robot-surface velocity``.
+    Legacy 117-D rows already contain the full 109-D state before their
+    limiter-history tail.
+    """
+
+    values = np.asarray(observations, dtype=dtype)
+    vector_input = values.ndim == 1
+    if vector_input:
+        values = values.reshape(1, -1)
+    if values.ndim != 2:
+        raise ValueError("Backup observations must be a vector or matrix")
+    if values.shape[1] == DYNAMIC_HRI_OBS_DIM:
+        restored = values.copy()
+    elif values.shape[1] == LEGACY_BACKUP_OBS_DIM:
+        restored = values[:, :DYNAMIC_HRI_OBS_DIM].copy()
+    elif values.shape[1] == BACKUP_OBS_DIM:
+        compact = values[:, :BACKUP_DYNAMIC_HRI_OBS_DIM]
+        source_slices = _policy_observation_slices(
+            BACKUP_DYNAMIC_HRI_OBS_FIELD_NAMES
+        )
+        target_slices = _policy_observation_slices(
+            DYNAMIC_HRI_OBS_FIELD_NAMES
+        )
+        restored = np.empty(
+            (values.shape[0], DYNAMIC_HRI_OBS_DIM),
+            dtype=dtype,
+        )
+        for field_name in DYNAMIC_HRI_OBS_FIELD_NAMES:
+            target = target_slices[field_name]
+            source = source_slices.get(field_name)
+            if source is not None:
+                restored[:, target] = compact[:, source]
+                continue
+            side = field_name.removesuffix("_hand_vel_filtered_mps")
+            if side not in ("left", "right"):
+                raise RuntimeError(
+                    f"Cannot restore omitted Backup field: {field_name}"
+                )
+            robot = source_slices[
+                f"{side}_closest_robot_velocity_world_mps"
+            ]
+            relative = source_slices[f"{side}_relative_velocity_world_mps"]
+            restored[:, target] = compact[:, robot] + compact[:, relative]
+    else:
+        raise ValueError(
+            "Unsupported Backup normalization observation width: "
+            f"{values.shape[1]}; expected {DYNAMIC_HRI_OBS_DIM}, "
+            f"{BACKUP_OBS_DIM}, or {LEGACY_BACKUP_OBS_DIM}"
+        )
+    if not np.all(np.isfinite(restored)):
+        raise ValueError("Restored dynamic HRI observations must be finite")
+    return restored.reshape(-1) if vector_input else restored
+
+
+def _policy_observation_slices(
+    field_names: tuple[str, ...] | list[str],
+) -> dict[str, slice]:
+    result: dict[str, slice] = {}
+    cursor = 0
+    for field_name in field_names:
+        field = _POLICY_FIELD_MAP[field_name]
+        result[field_name] = slice(cursor, cursor + field.dim)
+        cursor += field.dim
+    return result
 
 
 def apply_dynamic_hri_observation(

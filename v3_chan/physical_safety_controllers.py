@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import asdict, dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 import numpy as np
 
@@ -28,12 +28,30 @@ PHYSICAL_SAFETY_MODES = (
     "curobo_cbf",
 )
 
+CBF_OBJECTIVE_MODES = (
+    "joint_nominal",
+    "task_consistent",
+    "smooth_intervention",
+    "phase_progress",
+)
+
+CBF_PHASE_PROGRESS_OBJECTIVE_SCHEMA = "phase_aware_one_sided_progress_v2"
+
 INTENTIONAL_HUMAN_ABSENCE_CONTRACT = (
     "explicit_true_all_zero_tracking_mask_no_human_positions_geometry_or_"
     "constraints_cbf_inactive_nominal_action_v1"
 )
 
 _NOMINAL_FEASIBLE_PASSTHROUGH_ATOL_RADPS = 1e-12
+
+
+def cbf_objective_schema(mode: str) -> str:
+    return {
+        "joint_nominal": "joint_nominal_projection_v1",
+        "task_consistent": "task_consistent_quadratic_v1",
+        "smooth_intervention": "smooth_intervention_reference_v1",
+        "phase_progress": CBF_PHASE_PROGRESS_OBJECTIVE_SCHEMA,
+    }.get(str(mode), "unknown")
 
 
 def mode_uses_rmpflow_obstacles(mode: str) -> bool:
@@ -58,6 +76,14 @@ class CBFConfig:
     prediction_horizon_s: float = 0.15
     max_prediction_buffer_m: float = 0.08
     max_joint_speed_rad_s: float = 2.0
+    objective_mode: str = "joint_nominal"
+    task_space_weight: float = 1.0
+    task_yaw_length_scale_m_per_rad: float = 0.10
+    joint_regularization_epsilon: float = 0.05
+    correction_smoothness_weight: float = 1.0
+    progress_retention_rho: float = 0.70
+    progress_penalty_weight: float = 50.0
+    progress_nominal_threshold_mps: float = 0.01
     projection_iterations: int = 80
     projection_tolerance: float = 1e-5
     fail_closed_on_invalid_active_hand: bool = True
@@ -72,6 +98,13 @@ class CBFConfig:
             self.prediction_horizon_s,
             self.max_prediction_buffer_m,
             self.max_joint_speed_rad_s,
+            self.task_space_weight,
+            self.task_yaw_length_scale_m_per_rad,
+            self.joint_regularization_epsilon,
+            self.correction_smoothness_weight,
+            self.progress_retention_rho,
+            self.progress_penalty_weight,
+            self.progress_nominal_threshold_mps,
             self.projection_tolerance,
         )
         if not all(math.isfinite(float(value)) for value in values):
@@ -88,6 +121,26 @@ class CBFConfig:
             raise ValueError("max_prediction_buffer_m must be non-negative")
         if self.max_joint_speed_rad_s <= 0.0:
             raise ValueError("max_joint_speed_rad_s must be positive")
+        if self.objective_mode not in CBF_OBJECTIVE_MODES:
+            raise ValueError(
+                f"objective_mode must be one of {CBF_OBJECTIVE_MODES}"
+            )
+        if self.task_space_weight <= 0.0:
+            raise ValueError("task_space_weight must be positive")
+        if self.task_yaw_length_scale_m_per_rad <= 0.0:
+            raise ValueError("task_yaw_length_scale_m_per_rad must be positive")
+        if self.joint_regularization_epsilon <= 0.0:
+            raise ValueError("joint_regularization_epsilon must be positive")
+        if self.correction_smoothness_weight < 0.0:
+            raise ValueError("correction_smoothness_weight must be non-negative")
+        if not 0.0 <= self.progress_retention_rho <= 1.0:
+            raise ValueError("progress_retention_rho must be in [0, 1]")
+        if self.progress_penalty_weight < 0.0:
+            raise ValueError("progress_penalty_weight must be non-negative")
+        if self.progress_nominal_threshold_mps < 0.0:
+            raise ValueError(
+                "progress_nominal_threshold_mps must be non-negative"
+            )
         if int(self.projection_iterations) < 1:
             raise ValueError("projection_iterations must be positive")
         if self.projection_tolerance <= 0.0:
@@ -128,6 +181,42 @@ class PhysicalSafetyDiagnostics:
     solver_backend: str = "none"
     projection_status: str = "inactive"
     intentional_human_absence: bool = False
+    objective_mode: str = "joint_nominal"
+    objective_schema: str = "joint_nominal_projection_v1"
+    objective_solver_fallback: bool = False
+    task_space_weight: float = 0.0
+    task_yaw_length_scale_m_per_rad: float = 0.0
+    joint_regularization_epsilon: float = 0.0
+    correction_smoothness_weight: float = 0.0
+    progress_retention_rho: float = 0.0
+    progress_penalty_weight: float = 0.0
+    progress_nominal_threshold_mps: float = 0.0
+    task_progress_active: bool = False
+    task_progress_phase: str = "inactive"
+    task_progress_source: str = "inactive"
+    task_progress_gate_reason: str = "objective_not_phase_progress"
+    task_progress_direction_world: tuple[float, ...] = ()
+    task_progress_jacobian_row_m_per_rad: tuple[float, ...] = ()
+    task_progress_nominal_mps: float = 0.0
+    task_progress_A_mps: float = 0.0
+    task_progress_retained_target_mps: float = 0.0
+    task_progress_filtered_mps: float = 0.0
+    task_progress_A_shortfall_mps: float = 0.0
+    task_progress_shortfall_mps: float = 0.0
+    task_progress_excess_over_nominal_mps: float = 0.0
+    task_progress_base_objective: float = 0.0
+    task_progress_penalty_objective: float = 0.0
+    active_joint_indices: tuple[int, ...] = ()
+    nominal_velocity_radps: tuple[float, ...] = ()
+    objective_reference_velocity_radps: tuple[float, ...] = ()
+    filtered_velocity_radps: tuple[float, ...] = ()
+    previous_correction_radps: tuple[float, ...] = ()
+    correction_radps: tuple[float, ...] = ()
+    correction_rate_norm_radps2: float = 0.0
+    task_velocity_nominal: tuple[float, ...] = ()
+    task_velocity_filtered: tuple[float, ...] = ()
+    task_velocity_error_norm: float = 0.0
+    constraint_evidence: tuple[dict[str, Any], ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -159,6 +248,15 @@ class _CBFConstraint:
     jacobian_row: np.ndarray
     lower_bound_mps: float
     buffered_current_gap_m: float
+    raw_surface_gap_m: float
+    prediction_buffer_m: float
+    effective_safe_gap_m: float
+    barrier_value_m: float
+    hand_velocity_world_mps: tuple[float, float, float]
+    closing_speed_mps: float
+    normal_world: tuple[float, float, float]
+    closest_link: str
+    closest_collider_path: str
 
 
 @dataclass(frozen=True)
@@ -173,6 +271,41 @@ class _VelocityProjectionResult:
     relaxed_solution_available: bool
     solver_backend: str
     status: str
+
+
+@dataclass(frozen=True)
+class _PhaseProgressSpecification:
+    active: bool
+    phase: str
+    source: str
+    gate_reason: str
+    direction_world: tuple[float, ...] = ()
+    jacobian_row_m_per_rad: tuple[float, ...] = ()
+
+    @classmethod
+    def inactive(
+        cls,
+        reason: str,
+        *,
+        phase: str = "inactive",
+        source: str = "inactive",
+    ) -> "_PhaseProgressSpecification":
+        return cls(
+            active=False,
+            phase=str(phase),
+            source=str(source),
+            gate_reason=str(reason),
+        )
+
+    def disabled(self, reason: str) -> "_PhaseProgressSpecification":
+        return _PhaseProgressSpecification(
+            active=False,
+            phase=self.phase,
+            source=self.source,
+            gate_reason=str(reason),
+            direction_world=self.direction_world,
+            jacobian_row_m_per_rad=self.jacobian_row_m_per_rad,
+        )
 
 
 def project_velocity_qp(
@@ -593,10 +726,40 @@ class DistalLinkVelocityCBF:
 
     def __init__(self, config: CBFConfig | None = None) -> None:
         self.config = (config or CBFConfig()).validated()
-        self.last_diagnostics = PhysicalSafetyDiagnostics(controller="cbf")
+        self._previous_correction: np.ndarray | None = None
+        self._pending_correction: np.ndarray | None = None
+        self.last_diagnostics = PhysicalSafetyDiagnostics(
+            controller="cbf",
+            objective_mode=self.config.objective_mode,
+            objective_schema=cbf_objective_schema(self.config.objective_mode),
+        )
 
     def reset(self) -> None:
-        self.last_diagnostics = PhysicalSafetyDiagnostics(controller="cbf")
+        self._previous_correction = None
+        self._pending_correction = None
+        self.last_diagnostics = PhysicalSafetyDiagnostics(
+            controller="cbf",
+            objective_mode=self.config.objective_mode,
+            objective_schema=cbf_objective_schema(self.config.objective_mode),
+        )
+
+    def notify_action_committed(self, arm_command_committed: bool) -> None:
+        """Commit C's correction memory only when the arm command was applied.
+
+        The legacy gripper merge sends a gripper-only action on open/close
+        ticks.  A candidate CBF correction computed on such a tick must not
+        become the temporal reference for the next solve.
+        """
+
+        if not isinstance(arm_command_committed, (bool, np.bool_)):
+            raise ValueError("arm_command_committed must be an exact boolean")
+        if bool(arm_command_committed):
+            pending = getattr(self, "_pending_correction", None)
+            if pending is not None:
+                self._previous_correction = np.asarray(
+                    pending, dtype=float
+                ).copy()
+        self._pending_correction = None
 
     def filter_action(
         self,
@@ -608,6 +771,7 @@ class DistalLinkVelocityCBF:
         safety_geometry,
         observation: dict[str, np.ndarray],
         physics_dt_s: float,
+        task_progress_context: Mapping[str, Any] | None = None,
         human_valid_mask=None,
         intentional_human_absence: bool = False,
     ):
@@ -621,12 +785,17 @@ class DistalLinkVelocityCBF:
                 safety_geometry=safety_geometry,
                 observation=observation,
                 physics_dt_s=physics_dt_s,
+                task_progress_context=task_progress_context,
                 human_valid_mask=human_valid_mask,
                 intentional_human_absence=intentional_human_absence,
             )
         except Exception as exc:
             diagnostics = PhysicalSafetyDiagnostics(
                 controller="cbf",
+                objective_mode=self.config.objective_mode,
+                objective_schema=cbf_objective_schema(
+                    self.config.objective_mode
+                ),
                 solve_time_ms=(time.perf_counter() - started) * 1000.0,
                 feasible=False,
                 solver_converged=False,
@@ -650,6 +819,7 @@ class DistalLinkVelocityCBF:
         safety_geometry,
         observation: dict[str, np.ndarray],
         physics_dt_s: float,
+        task_progress_context: Mapping[str, Any] | None = None,
         human_valid_mask=None,
         intentional_human_absence: bool = False,
     ):
@@ -720,7 +890,21 @@ class DistalLinkVelocityCBF:
                 constructed_constraints=constraints,
             )
         )
-        if not constraints and not failures:
+        previous_correction = self._previous_correction
+        if (
+            previous_correction is None
+            or previous_correction.shape != nominal_velocity.shape
+        ):
+            previous_correction = np.zeros_like(nominal_velocity)
+        if intentional_absence:
+            previous_correction = np.zeros_like(nominal_velocity)
+            self._previous_correction = previous_correction.copy()
+        smooth_tail_requested = bool(
+            self.config.objective_mode == "smooth_intervention"
+            and not intentional_absence
+            and np.linalg.norm(previous_correction) > 1e-8
+        )
+        if not constraints and not failures and not smooth_tail_requested:
             nominal_velocity_norm = float(np.linalg.norm(nominal_velocity))
             if not math.isfinite(nominal_velocity_norm):
                 raise ValueError("QP inputs must be finite")
@@ -750,7 +934,41 @@ class DistalLinkVelocityCBF:
                 failure_reasons=(),
                 status="inactive",
                 intentional_human_absence=intentional_absence,
+                objective_mode=self.config.objective_mode,
+                objective_schema=cbf_objective_schema(
+                    self.config.objective_mode
+                ),
+                task_space_weight=float(self.config.task_space_weight),
+                task_yaw_length_scale_m_per_rad=float(
+                    self.config.task_yaw_length_scale_m_per_rad
+                ),
+                joint_regularization_epsilon=float(
+                    self.config.joint_regularization_epsilon
+                ),
+                correction_smoothness_weight=float(
+                    self.config.correction_smoothness_weight
+                ),
+                progress_retention_rho=float(
+                    self.config.progress_retention_rho
+                ),
+                progress_penalty_weight=float(
+                    self.config.progress_penalty_weight
+                ),
+                progress_nominal_threshold_mps=float(
+                    self.config.progress_nominal_threshold_mps
+                ),
+                active_joint_indices=tuple(int(v) for v in joint_indices),
+                nominal_velocity_radps=tuple(float(v) for v in nominal_velocity),
+                objective_reference_velocity_radps=tuple(
+                    float(v) for v in nominal_velocity
+                ),
+                filtered_velocity_radps=tuple(float(v) for v in nominal_velocity),
+                previous_correction_radps=tuple(
+                    float(v) for v in previous_correction
+                ),
+                correction_radps=tuple(0.0 for _ in nominal_velocity),
             )
+            self._previous_correction = np.zeros_like(nominal_velocity)
             return arm_action, diagnostics
 
         speed_limit = _joint_speed_limits(robot, joint_indices, self.config)
@@ -762,7 +980,7 @@ class DistalLinkVelocityCBF:
         bounds = np.asarray(
             [constraint.lower_bound_mps for constraint in constraints], dtype=float
         )
-        projection = _project_velocity_qp_detailed(
+        baseline_projection = _project_velocity_qp_detailed(
             nominal_velocity,
             matrix,
             bounds,
@@ -771,10 +989,143 @@ class DistalLinkVelocityCBF:
             max_iterations=self.config.projection_iterations,
             tolerance=self.config.projection_tolerance,
         )
+        projection = baseline_projection
+        objective_reference = nominal_velocity.copy()
+        objective_solver_fallback = False
+        task_jacobian = np.empty((0, nominal_velocity.size), dtype=float)
+        task_velocity_nominal = np.empty(0, dtype=float)
+        progress_specification = _PhaseProgressSpecification.inactive(
+            "objective_not_phase_progress"
+        )
+        progress_nominal_mps = 0.0
+        progress_A_mps = 0.0
+        progress_retained_target_mps = 0.0
+        if baseline_projection.feasible and not failures:
+            if self.config.objective_mode == "task_consistent":
+                task_jacobian = _task_consistency_jacobian(
+                    jacobians,
+                    body_names,
+                    joint_indices,
+                    yaw_length_scale_m_per_rad=(
+                        self.config.task_yaw_length_scale_m_per_rad
+                    ),
+                )
+                task_velocity_nominal = task_jacobian @ nominal_velocity
+                hessian = (
+                    float(self.config.task_space_weight)
+                    * (task_jacobian.T @ task_jacobian)
+                    + float(self.config.joint_regularization_epsilon)
+                    * np.eye(nominal_velocity.size, dtype=float)
+                )
+                task_projection = _project_velocity_quadratic_detailed(
+                    nominal_velocity=nominal_velocity,
+                    hessian=hessian,
+                    constraint_matrix=matrix,
+                    lower_bounds=bounds,
+                    velocity_lower=velocity_lower,
+                    velocity_upper=velocity_upper,
+                    feasible_seed=baseline_projection.velocity,
+                    tolerance=self.config.projection_tolerance,
+                    violation_before=baseline_projection.violation_before_mps,
+                )
+                if task_projection is None:
+                    objective_solver_fallback = True
+                else:
+                    projection = task_projection
+            elif self.config.objective_mode == "smooth_intervention":
+                smoothness_weight = float(
+                    self.config.correction_smoothness_weight
+                )
+                if smoothness_weight > 0.0:
+                    objective_reference = nominal_velocity + (
+                        smoothness_weight / (1.0 + smoothness_weight)
+                    ) * previous_correction
+                    projection = _project_velocity_qp_detailed(
+                        objective_reference,
+                        matrix,
+                        bounds,
+                        velocity_lower,
+                        velocity_upper,
+                        max_iterations=self.config.projection_iterations,
+                        tolerance=self.config.projection_tolerance,
+                    )
+                    # This problem has the same feasible set as A.  If the
+                    # alternate-reference solve cannot certify it, apply A's
+                    # already-certified safe projection.
+                    if not projection.feasible:
+                        projection = baseline_projection
+                        objective_solver_fallback = True
+            elif self.config.objective_mode == "phase_progress":
+                progress_specification = _phase_progress_specification(
+                    jacobians=jacobians,
+                    body_names=body_names,
+                    active_joint_indices=joint_indices,
+                    observation=observation,
+                    context=task_progress_context,
+                )
+                if progress_specification.active:
+                    progress_row = np.asarray(
+                        progress_specification.jacobian_row_m_per_rad,
+                        dtype=float,
+                    )
+                    progress_nominal_mps = float(
+                        progress_row @ nominal_velocity
+                    )
+                    progress_A_mps = float(
+                        progress_row @ baseline_projection.velocity
+                    )
+                    if progress_nominal_mps <= float(
+                        self.config.progress_nominal_threshold_mps
+                    ):
+                        progress_specification = progress_specification.disabled(
+                            "nominal_progress_below_threshold"
+                        )
+                    else:
+                        progress_retained_target_mps = float(
+                            self.config.progress_retention_rho
+                        ) * progress_nominal_mps
+                    if (
+                        progress_specification.active
+                        and float(self.config.progress_penalty_weight) <= 0.0
+                    ):
+                        progress_specification = progress_specification.disabled(
+                            "zero_progress_penalty_weight"
+                        )
+                    elif progress_specification.active:
+                        progress_projection = (
+                            _project_velocity_phase_progress_detailed(
+                                nominal_velocity=nominal_velocity,
+                                progress_row=progress_row,
+                                retained_target_mps=progress_retained_target_mps,
+                                penalty_weight=float(
+                                    self.config.progress_penalty_weight
+                                ),
+                                constraint_matrix=matrix,
+                                lower_bounds=bounds,
+                                velocity_lower=velocity_lower,
+                                velocity_upper=velocity_upper,
+                                feasible_seed=baseline_projection.velocity,
+                                tolerance=self.config.projection_tolerance,
+                                violation_before=(
+                                    baseline_projection.violation_before_mps
+                                ),
+                            )
+                        )
+                        if progress_projection is None:
+                            objective_solver_fallback = True
+                            progress_specification = (
+                                progress_specification.disabled(
+                                    "phase_progress_solver_fallback_to_A"
+                                )
+                            )
+                        else:
+                            projection = progress_projection
         filtered_velocity = projection.velocity.copy()
         slack = projection.slack_mps
         feasible = projection.feasible
-        before = projection.violation_before_mps
+        # "before" always means the original nominal command, even when C
+        # projects an alternate temporal reference.
+        before = baseline_projection.violation_before_mps
         after = projection.violation_after_mps
 
         fallback_applied = False
@@ -833,6 +1184,58 @@ class DistalLinkVelocityCBF:
             arm_action.joint_velocities = filtered_velocity
             intervention = float(np.linalg.norm(filtered_velocity - nominal_velocity))
             filtered_velocity_norm = float(np.linalg.norm(filtered_velocity))
+            if (
+                self.config.objective_mode == "smooth_intervention"
+                and not constraints
+                and not failures
+                and not fallback_applied
+                and intervention > 1e-8
+            ):
+                status = "smooth_intervention_tail"
+        correction = filtered_velocity - nominal_velocity
+        correction_rate_norm = float(
+            np.linalg.norm(correction - previous_correction) / dt_s
+        )
+        self._pending_correction = correction.copy()
+        if task_jacobian.size:
+            task_velocity_filtered = task_jacobian @ filtered_velocity
+            task_velocity_error_norm = float(
+                np.linalg.norm(task_velocity_filtered - task_velocity_nominal)
+            )
+        else:
+            task_velocity_filtered = np.empty(0, dtype=float)
+            task_velocity_error_norm = 0.0
+        progress_row = np.asarray(
+            progress_specification.jacobian_row_m_per_rad, dtype=float
+        )
+        progress_filtered_mps = (
+            float(progress_row @ filtered_velocity)
+            if progress_row.size == filtered_velocity.size
+            else 0.0
+        )
+        progress_shortfall_mps = (
+            max(0.0, progress_retained_target_mps - progress_filtered_mps)
+            if progress_specification.active
+            else 0.0
+        )
+        progress_A_shortfall_mps = (
+            max(0.0, progress_retained_target_mps - progress_A_mps)
+            if progress_retained_target_mps > 0.0
+            else 0.0
+        )
+        progress_delta = filtered_velocity - nominal_velocity
+        progress_base_objective = (
+            0.5 * float(progress_delta @ progress_delta)
+            if progress_specification.active
+            else 0.0
+        )
+        progress_penalty_objective = (
+            float(self.config.progress_penalty_weight)
+            * progress_shortfall_mps
+            * progress_shortfall_mps
+            if progress_specification.active
+            else 0.0
+        )
         diagnostics = PhysicalSafetyDiagnostics(
             controller="cbf",
             active=bool(constraints),
@@ -866,6 +1269,70 @@ class DistalLinkVelocityCBF:
             failure_reasons=tuple(sorted(set(failures))),
             status=status,
             intentional_human_absence=intentional_absence,
+            objective_mode=self.config.objective_mode,
+            objective_schema=cbf_objective_schema(self.config.objective_mode),
+            objective_solver_fallback=bool(objective_solver_fallback),
+            task_space_weight=float(self.config.task_space_weight),
+            task_yaw_length_scale_m_per_rad=float(
+                self.config.task_yaw_length_scale_m_per_rad
+            ),
+            joint_regularization_epsilon=float(
+                self.config.joint_regularization_epsilon
+            ),
+            correction_smoothness_weight=float(
+                self.config.correction_smoothness_weight
+            ),
+            progress_retention_rho=float(self.config.progress_retention_rho),
+            progress_penalty_weight=float(self.config.progress_penalty_weight),
+            progress_nominal_threshold_mps=float(
+                self.config.progress_nominal_threshold_mps
+            ),
+            task_progress_active=bool(progress_specification.active),
+            task_progress_phase=str(progress_specification.phase),
+            task_progress_source=str(progress_specification.source),
+            task_progress_gate_reason=str(progress_specification.gate_reason),
+            task_progress_direction_world=tuple(
+                float(value) for value in progress_specification.direction_world
+            ),
+            task_progress_jacobian_row_m_per_rad=tuple(
+                float(value)
+                for value in progress_specification.jacobian_row_m_per_rad
+            ),
+            task_progress_nominal_mps=float(progress_nominal_mps),
+            task_progress_A_mps=float(progress_A_mps),
+            task_progress_retained_target_mps=float(
+                progress_retained_target_mps
+            ),
+            task_progress_filtered_mps=float(progress_filtered_mps),
+            task_progress_A_shortfall_mps=float(
+                progress_A_shortfall_mps
+            ),
+            task_progress_shortfall_mps=float(progress_shortfall_mps),
+            task_progress_excess_over_nominal_mps=max(
+                0.0, float(progress_filtered_mps - progress_nominal_mps)
+            ),
+            task_progress_base_objective=float(progress_base_objective),
+            task_progress_penalty_objective=float(
+                progress_penalty_objective
+            ),
+            active_joint_indices=tuple(int(v) for v in joint_indices),
+            nominal_velocity_radps=tuple(float(v) for v in nominal_velocity),
+            objective_reference_velocity_radps=tuple(
+                float(v) for v in objective_reference
+            ),
+            filtered_velocity_radps=tuple(float(v) for v in filtered_velocity),
+            previous_correction_radps=tuple(
+                float(v) for v in previous_correction
+            ),
+            correction_radps=tuple(float(v) for v in correction),
+            correction_rate_norm_radps2=correction_rate_norm,
+            task_velocity_nominal=tuple(float(v) for v in task_velocity_nominal),
+            task_velocity_filtered=tuple(float(v) for v in task_velocity_filtered),
+            task_velocity_error_norm=task_velocity_error_norm,
+            constraint_evidence=tuple(
+                _constraint_evidence_payload(constraint, nominal_velocity, filtered_velocity)
+                for constraint in constraints
+            ),
         )
         return arm_action, diagnostics
 
@@ -1124,7 +1591,382 @@ class DistalLinkVelocityCBF:
                 jacobian_row=np.asarray(constraint_row, dtype=float),
                 lower_bound_mps=lower_bound,
                 buffered_current_gap_m=float(gap_m - prediction_buffer),
+                raw_surface_gap_m=gap_m,
+                prediction_buffer_m=float(prediction_buffer),
+                effective_safe_gap_m=float(safe_gap),
+                barrier_value_m=float(barrier_value),
+                hand_velocity_world_mps=tuple(float(v) for v in hand_velocity),
+                closing_speed_mps=float(closing_speed),
+                normal_world=tuple(float(v) for v in normal),
+                closest_link=str(hand_result.closest_link),
+                closest_collider_path=str(
+                    getattr(hand_result, "closest_collider_path", "")
+                ),
             )
+
+
+def _task_consistency_jacobian(
+    jacobians: np.ndarray,
+    body_names: tuple[str, ...],
+    active_joint_indices: np.ndarray,
+    *,
+    yaw_length_scale_m_per_rad: float,
+) -> np.ndarray:
+    """Return BC's controlled task dimensions: world XYZ plus world yaw.
+
+    The frozen BC command is ``[dx, dy, dz, dyaw, gripper]``.  Gripper is a
+    separate actuator, so the arm objective preserves the corresponding 4-D
+    geometric velocity and deliberately does not invent roll/pitch targets.
+    ``panda_hand`` is the movable body coincident with the Franka flange in
+    the Isaac 4.5 asset and is the closest articulation Jacobian available to
+    RMPFlow's configured gripper target frame.
+    """
+
+    hand_jacobian = _body_jacobian(jacobians, body_names, "panda_hand")
+    hand_jacobian = hand_jacobian[:, active_joint_indices]
+    return np.vstack(
+        (
+            hand_jacobian[:3],
+            float(yaw_length_scale_m_per_rad) * hand_jacobian[5:6],
+        )
+    )
+
+
+def _phase_progress_specification(
+    *,
+    jacobians: np.ndarray,
+    body_names: tuple[str, ...],
+    active_joint_indices: np.ndarray,
+    observation: Mapping[str, np.ndarray],
+    context: Mapping[str, Any] | None,
+) -> _PhaseProgressSpecification:
+    """Build B v2's one-dimensional, phase-aware progress direction.
+
+    Recovery-stage context takes precedence over the aliased controller event
+    and preserves progress toward the frozen bridge's actual target.  The
+    objective is disabled in grasp-confirmation/release events.  For an
+    attached cube, the Panda hand translational Jacobian is logged and used as
+    an explicit rigid-attachment proxy rather than claiming a cube Jacobian.
+    """
+
+    if not isinstance(context, Mapping):
+        return _PhaseProgressSpecification.inactive("missing_progress_context")
+    if bool(context.get("recovery_control_active", False)):
+        ee_position = _mapping_vec3(observation, "ee_pos")
+        target_position = _mapping_vec3(context, "target_position_world_m")
+        recovery_stage = str(context.get("recovery_stage", "unknown"))
+        if ee_position is None or target_position is None:
+            return _PhaseProgressSpecification.inactive(
+                "missing_recovery_target",
+                phase=f"recovery:{recovery_stage}",
+                source="fixed_recovery_target_direction",
+            )
+        phase = f"recovery:{recovery_stage}"
+        source = "fixed_recovery_target_direction"
+        direction = target_position - ee_position
+        event = -1
+    else:
+        try:
+            event = int(context["controller_event"])
+        except (KeyError, TypeError, ValueError):
+            return _PhaseProgressSpecification.inactive("invalid_controller_event")
+
+    if event == -1:
+        pass
+    elif event in (0, 1):
+        phase = "approach"
+        source = "ee_to_cube"
+        direction = _mapping_vec3(observation, "ee_to_cube")
+    elif event in (2, 3):
+        return _PhaseProgressSpecification.inactive(
+            "unconfirmed_grasp_uses_A_objective",
+            phase="grasp_unconfirmed",
+            source="none",
+        )
+    elif event == 4:
+        phase = "lift"
+        if not _observation_flag(observation, "has_grasped_cube"):
+            return _PhaseProgressSpecification.inactive(
+                "lift_without_attachment_uses_A_objective",
+                phase=phase,
+                source="none",
+            )
+        ee_position = _mapping_vec3(observation, "ee_pos")
+        target_position = _mapping_vec3(context, "target_position_world_m")
+        if ee_position is None or target_position is None:
+            direction = np.asarray((0.0, 0.0, 1.0), dtype=float)
+            source = "world_up_fallback_missing_lift_target"
+        else:
+            direction = target_position - ee_position
+            if (
+                not np.all(np.isfinite(direction))
+                or float(np.linalg.norm(direction)) <= 1e-8
+            ):
+                direction = np.asarray((0.0, 0.0, 1.0), dtype=float)
+                source = "world_up_fallback_degenerate_lift_target"
+            else:
+                source = "controller_target_direction"
+    elif event in (5, 6):
+        phase = "transport" if event == 5 else "place"
+        if not _observation_flag(observation, "has_grasped_cube"):
+            return _PhaseProgressSpecification.inactive(
+                "transport_without_attachment_uses_A_objective",
+                phase=phase,
+                source="none",
+            )
+        if event == 6 and bool(context.get("place_spatially_ready", False)):
+            return _PhaseProgressSpecification.inactive(
+                "place_spatially_ready_uses_A_objective",
+                phase=phase,
+                source="none",
+            )
+        direction = _mapping_vec3(observation, "cube_to_place_target")
+        source = "attached_cube_goal_ee_jacobian_proxy"
+    else:
+        return _PhaseProgressSpecification.inactive(
+            "release_or_terminal_uses_A_objective",
+            phase="release" if event >= 7 else "unknown",
+            source="none",
+        )
+
+    if direction is None:
+        return _PhaseProgressSpecification.inactive(
+            "missing_phase_direction", phase=phase, source=source
+        )
+    norm = float(np.linalg.norm(direction))
+    if not math.isfinite(norm) or norm <= 1e-8:
+        return _PhaseProgressSpecification.inactive(
+            "degenerate_phase_direction", phase=phase, source=source
+        )
+    unit_direction = np.asarray(direction, dtype=float) / norm
+    hand_jacobian = _body_jacobian(jacobians, body_names, "panda_hand")
+    translational = np.asarray(
+        hand_jacobian[:3, active_joint_indices], dtype=float
+    )
+    progress_row = unit_direction @ translational
+    if (
+        progress_row.shape != active_joint_indices.shape
+        or not np.all(np.isfinite(progress_row))
+        or float(np.linalg.norm(progress_row)) <= 1e-10
+    ):
+        return _PhaseProgressSpecification.inactive(
+            "invalid_phase_progress_jacobian", phase=phase, source=source
+        )
+    return _PhaseProgressSpecification(
+        active=True,
+        phase=phase,
+        source=source,
+        gate_reason="active",
+        direction_world=tuple(float(value) for value in unit_direction),
+        jacobian_row_m_per_rad=tuple(float(value) for value in progress_row),
+    )
+
+
+def _mapping_vec3(
+    mapping: Mapping[str, Any], name: str
+) -> np.ndarray | None:
+    value = mapping.get(name)
+    if value is None:
+        return None
+    try:
+        array = np.asarray(value, dtype=float).reshape(-1)
+    except (TypeError, ValueError):
+        return None
+    if array.size < 3 or not np.all(np.isfinite(array[:3])):
+        return None
+    return array[:3].copy()
+
+
+def _observation_flag(observation: Mapping[str, Any], name: str) -> bool:
+    value = observation.get(name)
+    if value is None:
+        return False
+    try:
+        scalar = float(np.asarray(value, dtype=float).reshape(-1)[0])
+    except (IndexError, TypeError, ValueError):
+        return False
+    return bool(math.isfinite(scalar) and scalar > 0.5)
+
+
+def _project_velocity_quadratic_detailed(
+    *,
+    nominal_velocity: np.ndarray,
+    hessian: np.ndarray,
+    constraint_matrix: np.ndarray,
+    lower_bounds: np.ndarray,
+    velocity_lower: np.ndarray,
+    velocity_upper: np.ndarray,
+    feasible_seed: np.ndarray,
+    tolerance: float,
+    violation_before: float,
+) -> _VelocityProjectionResult | None:
+    """Minimize a positive-definite quadratic over A's unchanged safe set."""
+
+    try:
+        from scipy.optimize import Bounds, LinearConstraint, minimize
+    except (ImportError, ModuleNotFoundError):
+        return None
+
+    nominal = np.asarray(nominal_velocity, dtype=float)
+    matrix = np.asarray(constraint_matrix, dtype=float)
+    bounds = np.asarray(lower_bounds, dtype=float)
+    hessian = np.asarray(hessian, dtype=float)
+    seed = np.asarray(feasible_seed, dtype=float)
+    if hessian.shape != (nominal.size, nominal.size):
+        raise ValueError("task-consistent Hessian has an invalid shape")
+    if not np.all(np.isfinite(hessian)):
+        raise ValueError("task-consistent Hessian must be finite")
+
+    def objective(value: np.ndarray) -> float:
+        delta = value - nominal
+        return 0.5 * float(delta @ hessian @ delta)
+
+    def gradient(value: np.ndarray) -> np.ndarray:
+        return hessian @ (value - nominal)
+
+    try:
+        result = minimize(
+            objective,
+            seed,
+            jac=gradient,
+            method="SLSQP",
+            bounds=Bounds(velocity_lower, velocity_upper),
+            constraints=LinearConstraint(matrix, bounds, np.inf),
+            options={
+                "maxiter": 200,
+                "ftol": min(1e-12, max(1e-15, tolerance * tolerance)),
+                "disp": False,
+            },
+        )
+    except Exception:
+        return None
+    candidate = np.asarray(result.x, dtype=float)
+    if candidate.shape != nominal.shape or not np.all(np.isfinite(candidate)):
+        return None
+    candidate = np.clip(candidate, velocity_lower, velocity_upper)
+    violation_after = _max_halfspace_violation(matrix, bounds, candidate)
+    if not bool(result.success) or violation_after > tolerance:
+        return None
+    return _VelocityProjectionResult(
+        velocity=candidate,
+        slack_mps=0.0,
+        feasible=True,
+        violation_before_mps=float(violation_before),
+        violation_after_mps=float(violation_after),
+        solver_converged=True,
+        infeasibility_proven=False,
+        relaxed_solution_available=False,
+        solver_backend="scipy_slsqp_task_consistent",
+        status="solved_task_consistent",
+    )
+
+
+def _project_velocity_phase_progress_detailed(
+    *,
+    nominal_velocity: np.ndarray,
+    progress_row: np.ndarray,
+    retained_target_mps: float,
+    penalty_weight: float,
+    constraint_matrix: np.ndarray,
+    lower_bounds: np.ndarray,
+    velocity_lower: np.ndarray,
+    velocity_upper: np.ndarray,
+    feasible_seed: np.ndarray,
+    tolerance: float,
+    violation_before: float,
+) -> _VelocityProjectionResult | None:
+    """Minimize joint deviation plus a one-sided progress-shortfall penalty."""
+
+    try:
+        from scipy.optimize import Bounds, LinearConstraint, minimize
+    except (ImportError, ModuleNotFoundError):
+        return None
+
+    nominal = np.asarray(nominal_velocity, dtype=float)
+    row = np.asarray(progress_row, dtype=float).reshape(-1)
+    matrix = np.asarray(constraint_matrix, dtype=float)
+    bounds = np.asarray(lower_bounds, dtype=float)
+    seed = np.asarray(feasible_seed, dtype=float)
+    retained_target = float(retained_target_mps)
+    weight = float(penalty_weight)
+    if row.shape != nominal.shape or not np.all(np.isfinite(row)):
+        raise ValueError("phase-progress Jacobian row has an invalid shape")
+    if not math.isfinite(retained_target) or not math.isfinite(weight) or weight < 0.0:
+        raise ValueError("phase-progress objective parameters must be finite")
+
+    def objective(value: np.ndarray) -> float:
+        delta = value - nominal
+        shortfall = max(0.0, retained_target - float(row @ value))
+        return 0.5 * float(delta @ delta) + weight * shortfall * shortfall
+
+    def gradient(value: np.ndarray) -> np.ndarray:
+        shortfall = max(0.0, retained_target - float(row @ value))
+        return (value - nominal) - (2.0 * weight * shortfall) * row
+
+    try:
+        result = minimize(
+            objective,
+            seed,
+            jac=gradient,
+            method="SLSQP",
+            bounds=Bounds(velocity_lower, velocity_upper),
+            constraints=LinearConstraint(matrix, bounds, np.inf),
+            options={
+                "maxiter": 200,
+                "ftol": min(1e-12, max(1e-15, tolerance * tolerance)),
+                "disp": False,
+            },
+        )
+    except Exception:
+        return None
+    candidate = np.asarray(result.x, dtype=float)
+    if candidate.shape != nominal.shape or not np.all(np.isfinite(candidate)):
+        return None
+    candidate = np.clip(candidate, velocity_lower, velocity_upper)
+    violation_after = _max_halfspace_violation(matrix, bounds, candidate)
+    if not bool(result.success) or violation_after > tolerance:
+        return None
+    return _VelocityProjectionResult(
+        velocity=candidate,
+        slack_mps=0.0,
+        feasible=True,
+        violation_before_mps=float(violation_before),
+        violation_after_mps=float(violation_after),
+        solver_converged=True,
+        infeasibility_proven=False,
+        relaxed_solution_available=False,
+        solver_backend="scipy_slsqp_phase_progress",
+        status="solved_phase_progress",
+    )
+
+
+def _constraint_evidence_payload(
+    constraint: _CBFConstraint,
+    nominal_velocity: np.ndarray,
+    filtered_velocity: np.ndarray,
+) -> dict[str, Any]:
+    row = np.asarray(constraint.jacobian_row, dtype=float)
+    nominal_lhs = float(row @ nominal_velocity)
+    filtered_lhs = float(row @ filtered_velocity)
+    return {
+        "hand": constraint.hand,
+        "closest_link": constraint.closest_link,
+        "closest_collider_path": constraint.closest_collider_path,
+        "raw_surface_gap_m": float(constraint.raw_surface_gap_m),
+        "prediction_buffer_m": float(constraint.prediction_buffer_m),
+        "effective_safe_gap_m": float(constraint.effective_safe_gap_m),
+        "barrier_value_m": float(constraint.barrier_value_m),
+        "buffered_current_gap_m": float(constraint.buffered_current_gap_m),
+        "closing_speed_mps": float(constraint.closing_speed_mps),
+        "hand_velocity_world_mps": list(constraint.hand_velocity_world_mps),
+        "normal_world": list(constraint.normal_world),
+        "jacobian_row_m_per_rad": row.tolist(),
+        "lower_bound_mps": float(constraint.lower_bound_mps),
+        "nominal_lhs_mps": nominal_lhs,
+        "filtered_lhs_mps": filtered_lhs,
+        "nominal_residual_mps": nominal_lhs - float(constraint.lower_bound_mps),
+        "filtered_residual_mps": filtered_lhs - float(constraint.lower_bound_mps),
+    }
 
 
 def _dykstra_project(

@@ -131,7 +131,10 @@ class HRIOverviewVideoRecorder:
         if self._step_count % self.interval_steps != 0:
             return
         try:
-            self._rep.orchestrator.step()
+            # Refresh the render product without advancing the simulation clock.
+            # Replicator's default delta advances the timeline and would inject an
+            # extra physics step only when recording is enabled.
+            self._rep.orchestrator.step(delta_time=0.0, pause_timeline=False)
             self._capture_count += 1
             if self._capture_count == 1:
                 print(f"[HRIVideo] first frame captured: {self.record_dir}")

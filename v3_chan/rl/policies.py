@@ -12,13 +12,14 @@ class MLPPolicy(nn.Module):
         obs_dim: int,
         action_dim: int,
         hidden_dims: tuple[int, ...] = (256, 256),
+        hidden_activation: str = "relu",
     ) -> None:
         super().__init__()
         layers = []
         in_dim = int(obs_dim)
         for hidden_dim in hidden_dims:
             layers.append(nn.Linear(in_dim, int(hidden_dim)))
-            layers.append(nn.ReLU())
+            layers.append(activation_module(hidden_activation))
             in_dim = int(hidden_dim)
         layers.append(nn.Linear(in_dim, int(action_dim)))
         layers.append(nn.Tanh())
@@ -49,3 +50,16 @@ class MLPRegressor(nn.Module):
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         return self.net(obs)
+
+
+def activation_module(name: str) -> nn.Module:
+    normalized = str(name).strip().lower()
+    if normalized == "relu":
+        return nn.ReLU()
+    if normalized in {"silu", "swish"}:
+        return nn.SiLU()
+    if normalized == "tanh":
+        return nn.Tanh()
+    if normalized == "elu":
+        return nn.ELU()
+    raise ValueError(f"Unsupported hidden activation: {name}")

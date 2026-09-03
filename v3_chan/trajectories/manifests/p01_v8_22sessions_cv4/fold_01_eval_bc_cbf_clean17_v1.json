@@ -1,0 +1,5004 @@
+{
+  "schema_version": "hri_encounter_manifest_v4",
+  "source_configuration_schema_version": "hri_source_configuration_v1",
+  "phase_anchor_policy": "minimum_surface_gap_in_core",
+  "training_valid_mask_policy": "require_all_scenario_frames_when_preprocessing_mask_is_present",
+  "created_at_utc": "2026-09-02T11:43:38.438342+00:00",
+  "build_config": {
+    "gate_start_m": 0.13,
+    "near_m": 0.05,
+    "near_miss_m": 0.02,
+    "collision_m": 0.0,
+    "clear_end_m": 0.15,
+    "onset_frames": 3,
+    "clear_frames": 15,
+    "margin_frames": 30,
+    "safe_window_frames": 180,
+    "safe_stride_frames": 90,
+    "safe_min_frames": 120,
+    "max_safe_per_episode": 8
+  },
+  "sources": [
+    {
+      "path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260728_224810_423943687_292194_hri_training_ready_v1.hdf5",
+      "episode_count": 3,
+      "scenario_count": 48
+    },
+    {
+      "path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260729_170925_716944084_1257314_hri_training_ready_v1.hdf5",
+      "episode_count": 3,
+      "scenario_count": 29
+    },
+    {
+      "path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_161329_535819589_2440848_hri_training_ready_v1.hdf5",
+      "episode_count": 3,
+      "scenario_count": 40
+    },
+    {
+      "path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260801_000831_362023440_4082633_hri_training_ready_v1.hdf5",
+      "episode_count": 3,
+      "scenario_count": 29
+    },
+    {
+      "path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_sessions17_24_training_ready_v1/hri_p01_sessions17-24_training_ready_v1/hdf5/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260805_200049_344919066_1681583_hri_training_ready_v1.hdf5",
+      "episode_count": 3,
+      "scenario_count": 23
+    },
+    {
+      "path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_sessions17_24_training_ready_v1/hri_p01_sessions17-24_training_ready_v1/hdf5/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_161720_522444864_2596652_hri_training_ready_v1.hdf5",
+      "episode_count": 3,
+      "scenario_count": 34
+    }
+  ],
+  "scenario_count": 17,
+  "severity_counts": {
+    "safe": 0,
+    "gate_only": 8,
+    "near": 0,
+    "near_miss": 0,
+    "collision": 9
+  },
+  "split_metadata": {
+    "schema_version": "session_disjoint_round_robin_cv_v1",
+    "independent_unit": "collection_session",
+    "fold": 1,
+    "role": "eval",
+    "held_out_sessions": [
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260728_224810_423943687_292194_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260729_170925_716944084_1257314_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_161329_535819589_2440848_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260801_000831_362023440_4082633_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260805_200049_344919066_1681583_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_161720_522444864_2596652_hri_training_ready_v1"
+    ],
+    "all_sessions": [
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260728_224810_423943687_292194_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260729_155936_342003779_1200275_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260729_163623_472696637_1230766_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260729_165057_512466517_1241758_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260729_170925_716944084_1257314_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260729_173154_016889423_1275265_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_152916_010166436_2406353_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_154856_407214602_2421237_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_161329_535819589_2440848_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_162445_510829255_2448882_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260731_231735_538566929_4043404_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260731_232740_491181963_4050395_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260801_000831_362023440_4082633_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260801_003158_138379446_4102187_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260804_181258_254221159_343797_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260804_182302_966194466_351172_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260805_200049_344919066_1681583_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260805_201152_137600017_1689437_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260805_202206_292060934_1696717_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_160737_102146020_2589531_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_161720_522444864_2596652_hri_training_ready_v1",
+      "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_162739_979311313_2604402_hri_training_ready_v1"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "50448016792889fc",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260728_224810_423943687_292194_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260728_224810_423943687_292194_hri_training_ready_v1",
+      "episode_name": "episode_000000",
+      "source_episode": "episode_000000",
+      "start_step": 532,
+      "core_start_step": 562,
+      "core_end_step": 584,
+      "end_step": 614,
+      "length": 82,
+      "target_severity": "gate_only",
+      "cube_index": 0,
+      "attempt_index": 1,
+      "task_phase": "release_cube",
+      "task_phase_index": 3,
+      "controller_event": 6,
+      "phase_anchor_step": 566,
+      "trigger_task_phase": "release_cube",
+      "trigger_controller_event": 6,
+      "source_anchor_step": 532,
+      "source_anchor_ee_pos": [
+        0.5993865728378296,
+        -0.218648299574852,
+        1.1451700925827026
+      ],
+      "recorded_min_surface_gap_m": 0.1072998046875,
+      "recorded_contact": false,
+      "recorded_closest_link_id": 4,
+      "recorded_closest_hand_id": 1,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000000",
+        "active_cube_index": 0,
+        "active_cube_name": "cube_0",
+        "collection_seed": 4911548809754838592,
+        "layout_seed": 5922040683801834211,
+        "layout_id": "57f59b57f03c6018",
+        "measured_layout_id": "57f59b57f03c6018",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3178527355194092,
+            -0.18220104277133942,
+            0.9757500290870667
+          ],
+          [
+            0.49811771512031555,
+            -0.16172927618026733,
+            0.9757500290870667
+          ],
+          [
+            0.5119487643241882,
+            0.1417301744222641,
+            0.9757500290870667
+          ],
+          [
+            0.6321869492530823,
+            -0.09913255274295807,
+            0.9757500290870667
+          ],
+          [
+            0.32278862595558167,
+            -0.012204453349113464,
+            0.9757500290870667
+          ],
+          [
+            0.3467003405094147,
+            0.23098888993263245,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.012000128626823425,
+          -0.5699884295463562,
+          -3.4133133652858305e-08,
+          -2.8100030422210693,
+          -2.8140511858509853e-06,
+          3.036999464035034,
+          0.7410036325454712,
+          0.03999999910593033,
+          0.03999999910593033
+        ],
+        "robot_initial_joint_velocities": [
+          -1.270346183446236e-05,
+          -0.0011893537594005466,
+          3.323223381812568e-06,
+          0.00046929423115216196,
+          0.00027410543407313526,
+          2.1403860955615528e-05,
+          -0.00029632559744641185,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 532,
+        "source_anchor_ee_pos": [
+          0.5993865728378296,
+          -0.218648299574852,
+          1.1451700925827026
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          -0.0009191459976136684,
+          0.999999463558197,
+          0.00017577409744262695,
+          0.00043271429603919387
+        ],
+        "source_anchor_robot_joint_positions": [
+          -0.2862861454486847,
+          0.5128130912780762,
+          -0.11091572791337967,
+          -1.8300771713256836,
+          0.0783991813659668,
+          2.3388376235961914,
+          0.3474993407726288,
+          0.02606058493256569,
+          0.02606058493256569
+        ],
+        "source_anchor_robot_joint_velocities": [
+          -0.028242962434887886,
+          0.0636615976691246,
+          0.0314284972846508,
+          0.0028008681256324053,
+          0.019499069079756737,
+          0.06089548021554947,
+          -0.014456016011536121,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 532,
+      "risk_window_end_step": 614,
+      "human_motion_start_step": 532,
+      "human_motion_end_step": 597,
+      "human_motion_length": 65,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 532,
+        "end_step_exclusive": 597,
+        "length": 65,
+        "risk_window_start_step": 532,
+        "risk_window_end_step_exclusive": 614,
+        "risk_core_start_step": 562,
+        "risk_core_end_step_exclusive": 584,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 552,
+            "end_step_exclusive": 560,
+            "head_relative_position_m": [
+              -0.22010794281959534,
+              -0.1466132402420044,
+              -0.4563775658607483
+            ],
+            "maximum_speed_mps": 0.14425810178184645
+          },
+          "right": {
+            "start_step": 525,
+            "end_step_exclusive": 532,
+            "head_relative_position_m": [
+              -0.24113506078720093,
+              0.08119871467351913,
+              -0.4664435386657715
+            ],
+            "maximum_speed_mps": 0.12737352740851296
+          }
+        },
+        "recovery_search_start_step": 584,
+        "recovery_hold_start_step": 589,
+        "recovery_confirmation_step": 596,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.03169969272506787,
+          "right": 0.029439998985005957
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.08404779197666998,
+          "right": 0.05455831018660321
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 4.228212083999097,
+        "maximum_hand_step_displacement_m": 0.0700970353783801,
+        "maximum_head_hand_distance_m": 0.6435143558581637,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "e4dec154890c9930",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260728_224810_423943687_292194_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260728_224810_423943687_292194_hri_training_ready_v1",
+      "episode_name": "episode_000002",
+      "source_episode": "episode_000002",
+      "start_step": 285,
+      "core_start_step": 315,
+      "core_end_step": 353,
+      "end_step": 383,
+      "length": 98,
+      "target_severity": "collision",
+      "cube_index": 0,
+      "attempt_index": 1,
+      "task_phase": "release_cube",
+      "task_phase_index": 3,
+      "controller_event": 6,
+      "phase_anchor_step": 345,
+      "trigger_task_phase": "move_to_target",
+      "trigger_controller_event": 4,
+      "source_anchor_step": 285,
+      "source_anchor_ee_pos": [
+        0.31788018345832825,
+        -0.1516885608434677,
+        1.0326786041259766
+      ],
+      "recorded_min_surface_gap_m": -0.03500000014901161,
+      "recorded_contact": true,
+      "recorded_closest_link_id": 4,
+      "recorded_closest_hand_id": 2,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000002",
+        "active_cube_index": 0,
+        "active_cube_name": "cube_0",
+        "collection_seed": 4911548809754838592,
+        "layout_seed": 5922040683801834211,
+        "layout_id": "57f59b57f03c6018",
+        "measured_layout_id": "57f59b57f03c6018",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3178527355194092,
+            -0.18220104277133942,
+            0.9757500290870667
+          ],
+          [
+            0.49811771512031555,
+            -0.16172927618026733,
+            0.9757500290870667
+          ],
+          [
+            0.5119487643241882,
+            0.1417301744222641,
+            0.9757500290870667
+          ],
+          [
+            0.6321869492530823,
+            -0.09913255274295807,
+            0.9757500290870667
+          ],
+          [
+            0.32278862595558167,
+            -0.012204453349113464,
+            0.9757500290870667
+          ],
+          [
+            0.3467003405094147,
+            0.23098888993263245,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.01200008112937212,
+          -0.5699905753135681,
+          -1.9922437033415008e-08,
+          -2.8100028038024902,
+          -1.68217286500294e-06,
+          3.036999464035034,
+          0.7410019636154175,
+          0.03999999165534973,
+          0.03999999165534973
+        ],
+        "robot_initial_joint_velocities": [
+          -9.685367331258021e-06,
+          -0.0009661110816523433,
+          1.6135901432789979e-06,
+          0.00041064328979700804,
+          0.00016952799342107028,
+          9.612456778995693e-06,
+          -0.0001846130908234045,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 285,
+        "source_anchor_ee_pos": [
+          0.31788018345832825,
+          -0.1516885608434677,
+          1.0326786041259766
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          6.65406696498394e-05,
+          0.9999966621398926,
+          0.0025973916053771973,
+          9.74409886111971e-06
+        ],
+        "source_anchor_robot_joint_positions": [
+          -0.3680664300918579,
+          0.23705817759037018,
+          -0.09205196797847748,
+          -2.797609567642212,
+          0.19704212248325348,
+          3.0316672325134277,
+          0.12676410377025604,
+          0.026061739772558212,
+          0.026061739772558212
+        ],
+        "source_anchor_robot_joint_velocities": [
+          0.3327209949493408,
+          -0.6845870018005371,
+          -0.4902041256427765,
+          -0.14255769550800323,
+          -0.42780500650405884,
+          -0.5557079315185547,
+          0.3001307547092438,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 285,
+      "risk_window_end_step": 383,
+      "human_motion_start_step": 285,
+      "human_motion_end_step": 419,
+      "human_motion_length": 134,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 285,
+        "end_step_exclusive": 419,
+        "length": 134,
+        "risk_window_start_step": 285,
+        "risk_window_end_step_exclusive": 383,
+        "risk_core_start_step": 315,
+        "risk_core_end_step_exclusive": 353,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 285,
+            "end_step_exclusive": 315,
+            "head_relative_position_m": [
+              -0.2644880712032318,
+              -0.17238017916679382,
+              -0.4402373433113098
+            ],
+            "maximum_speed_mps": 0.2331364376778525
+          },
+          "right": {
+            "start_step": 278,
+            "end_step_exclusive": 285,
+            "head_relative_position_m": [
+              -0.25370824337005615,
+              0.13607333600521088,
+              -0.41611647605895996
+            ],
+            "maximum_speed_mps": 0.06250221481234879
+          }
+        },
+        "recovery_search_start_step": 353,
+        "recovery_hold_start_step": 409,
+        "recovery_confirmation_step": 418,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.07842144968393694,
+          "right": 0.0563110934052129
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.04352872789952041,
+          "right": 0.029280876042420165
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 8.020838419997744,
+        "maximum_hand_step_displacement_m": 0.10322887680285037,
+        "maximum_head_hand_distance_m": 0.7268417200358351,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "27630e46ae47b2a8",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260728_224810_423943687_292194_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260728_224810_423943687_292194_hri_training_ready_v1",
+      "episode_name": "episode_000002",
+      "source_episode": "episode_000002",
+      "start_step": 1457,
+      "core_start_step": 1487,
+      "core_end_step": 1505,
+      "end_step": 1535,
+      "length": 78,
+      "target_severity": "collision",
+      "cube_index": 2,
+      "attempt_index": 3,
+      "task_phase": "release_cube",
+      "task_phase_index": 3,
+      "controller_event": 6,
+      "phase_anchor_step": 1495,
+      "trigger_task_phase": "release_cube",
+      "trigger_controller_event": 6,
+      "source_anchor_step": 1457,
+      "source_anchor_ee_pos": [
+        0.5082507729530334,
+        0.07150618731975555,
+        1.1493065357208252
+      ],
+      "recorded_min_surface_gap_m": -0.03500000014901161,
+      "recorded_contact": true,
+      "recorded_closest_link_id": 4,
+      "recorded_closest_hand_id": 2,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000002",
+        "active_cube_index": 2,
+        "active_cube_name": "cube_2",
+        "collection_seed": 4911548809754838592,
+        "layout_seed": 5922040683801834211,
+        "layout_id": "57f59b57f03c6018",
+        "measured_layout_id": "57f59b57f03c6018",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3178527355194092,
+            -0.18220104277133942,
+            0.9757500290870667
+          ],
+          [
+            0.49811771512031555,
+            -0.16172927618026733,
+            0.9757500290870667
+          ],
+          [
+            0.5119487643241882,
+            0.1417301744222641,
+            0.9757500290870667
+          ],
+          [
+            0.6321869492530823,
+            -0.09913255274295807,
+            0.9757500290870667
+          ],
+          [
+            0.32278862595558167,
+            -0.012204453349113464,
+            0.9757500290870667
+          ],
+          [
+            0.3467003405094147,
+            0.23098888993263245,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.01200008112937212,
+          -0.5699905753135681,
+          -1.9922437033415008e-08,
+          -2.8100028038024902,
+          -1.68217286500294e-06,
+          3.036999464035034,
+          0.7410019636154175,
+          0.03999999165534973,
+          0.03999999165534973
+        ],
+        "robot_initial_joint_velocities": [
+          -9.685367331258021e-06,
+          -0.0009661110816523433,
+          1.6135901432789979e-06,
+          0.00041064328979700804,
+          0.00016952799342107028,
+          9.612456778995693e-06,
+          -0.0001846130908234045,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 1457,
+        "source_anchor_ee_pos": [
+          0.5082507729530334,
+          0.07150618731975555,
+          1.1493065357208252
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          0.014888657256960869,
+          0.9995387196540833,
+          -0.022972283884882927,
+          0.013147987425327301
+        ],
+        "source_anchor_robot_joint_positions": [
+          0.12160144746303558,
+          0.15733784437179565,
+          -0.02952370047569275,
+          -2.3786189556121826,
+          -0.05079788714647293,
+          2.5579938888549805,
+          0.9659342169761658,
+          0.026059309020638466,
+          0.026059309020638466
+        ],
+        "source_anchor_robot_joint_velocities": [
+          -0.3008764684200287,
+          -0.5779438018798828,
+          -0.19596363604068756,
+          -0.1788942664861679,
+          -0.07200778275728226,
+          -0.3398105800151825,
+          -0.3860030174255371,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 1457,
+      "risk_window_end_step": 1535,
+      "human_motion_start_step": 1457,
+      "human_motion_end_step": 1587,
+      "human_motion_length": 130,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 1457,
+        "end_step_exclusive": 1587,
+        "length": 130,
+        "risk_window_start_step": 1457,
+        "risk_window_end_step_exclusive": 1535,
+        "risk_core_start_step": 1487,
+        "risk_core_end_step_exclusive": 1505,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 1474,
+            "end_step_exclusive": 1487,
+            "head_relative_position_m": [
+              -0.17840361595153809,
+              -0.23421724140644073,
+              -0.4840129017829895
+            ],
+            "maximum_speed_mps": 0.19565191619550512
+          },
+          "right": {
+            "start_step": 1449,
+            "end_step_exclusive": 1457,
+            "head_relative_position_m": [
+              -0.2352307140827179,
+              0.08788638561964035,
+              -0.4630715847015381
+            ],
+            "maximum_speed_mps": 0.0818356492349201
+          }
+        },
+        "recovery_search_start_step": 1505,
+        "recovery_hold_start_step": 1578,
+        "recovery_confirmation_step": 1586,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.09781076745228212,
+          "right": 0.0330109178217442
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.01690902824139727,
+          "right": 0.02500259477577074
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 8.566877348999697,
+        "maximum_hand_step_displacement_m": 0.10584633378709461,
+        "maximum_head_hand_distance_m": 0.6249551444042466,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "b27abf0c36b142e4",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_161329_535819589_2440848_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_161329_535819589_2440848_hri_training_ready_v1",
+      "episode_name": "episode_000000",
+      "source_episode": "episode_000000",
+      "start_step": 613,
+      "core_start_step": 643,
+      "core_end_step": 733,
+      "end_step": 763,
+      "length": 150,
+      "target_severity": "collision",
+      "cube_index": 1,
+      "attempt_index": 2,
+      "task_phase": "approach_cube",
+      "task_phase_index": 0,
+      "controller_event": 1,
+      "phase_anchor_step": 727,
+      "trigger_task_phase": "approach_cube",
+      "trigger_controller_event": 0,
+      "source_anchor_step": 613,
+      "source_anchor_ee_pos": [
+        0.5627490878105164,
+        -0.010894671082496643,
+        1.2309573888778687
+      ],
+      "recorded_min_surface_gap_m": -0.010054340586066246,
+      "recorded_contact": true,
+      "recorded_closest_link_id": 5,
+      "recorded_closest_hand_id": 1,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000000",
+        "active_cube_index": 1,
+        "active_cube_name": "cube_1",
+        "collection_seed": 8258517330145277582,
+        "layout_seed": 8084149641433173819,
+        "layout_id": "1149b957ca3cdd74",
+        "measured_layout_id": "1149b957ca3cdd74",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3961091935634613,
+            0.17642106115818024,
+            0.9757500290870667
+          ],
+          [
+            0.6287686228752136,
+            0.047154877334833145,
+            0.9757500290870667
+          ],
+          [
+            0.3219398856163025,
+            -0.006101603154093027,
+            0.9757500290870667
+          ],
+          [
+            0.5194756388664246,
+            -0.13065099716186523,
+            0.9757500290870667
+          ],
+          [
+            0.5308182239532471,
+            0.20332838594913483,
+            0.9757500290870667
+          ],
+          [
+            0.3672964572906494,
+            -0.20836427807807922,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.012000128626823425,
+          -0.5699884295463562,
+          -3.4133133652858305e-08,
+          -2.8100030422210693,
+          -2.8140511858509853e-06,
+          3.036999464035034,
+          0.7410036325454712,
+          0.03999999910593033,
+          0.03999999910593033
+        ],
+        "robot_initial_joint_velocities": [
+          -1.270346183446236e-05,
+          -0.0011893537594005466,
+          3.323223381812568e-06,
+          0.00046929423115216196,
+          0.00027410543407313526,
+          2.1403860955615528e-05,
+          -0.00029632559744641185,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 613,
+        "source_anchor_ee_pos": [
+          0.5627490878105164,
+          -0.010894671082496643,
+          1.2309573888778687
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          -0.001456875936128199,
+          0.9999979138374329,
+          0.001392364501953125,
+          0.0005070836050435901
+        ],
+        "source_anchor_robot_joint_positions": [
+          -0.09786808490753174,
+          0.15763549506664276,
+          0.007384005468338728,
+          -2.1180036067962646,
+          0.0024111696984618902,
+          2.2763757705688477,
+          0.6904743909835815,
+          0.039999820291996,
+          0.039999820291996
+        ],
+        "source_anchor_robot_joint_velocities": [
+          0.30617672204971313,
+          -0.10545807331800461,
+          0.149001806974411,
+          -0.16523593664169312,
+          -0.04398975521326065,
+          0.0622774101793766,
+          0.4761998653411865,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 613,
+      "risk_window_end_step": 763,
+      "human_motion_start_step": 613,
+      "human_motion_end_step": 761,
+      "human_motion_length": 148,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 613,
+        "end_step_exclusive": 761,
+        "length": 148,
+        "risk_window_start_step": 613,
+        "risk_window_end_step_exclusive": 763,
+        "risk_core_start_step": 643,
+        "risk_core_end_step_exclusive": 733,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 619,
+            "end_step_exclusive": 639,
+            "head_relative_position_m": [
+              -0.22624006867408752,
+              -0.08554018288850784,
+              -0.4478447735309601
+            ],
+            "maximum_speed_mps": 0.24287738735036082
+          },
+          "right": {
+            "start_step": 619,
+            "end_step_exclusive": 643,
+            "head_relative_position_m": [
+              -0.17995664477348328,
+              0.05935384286567569,
+              -0.4020596742630005
+            ],
+            "maximum_speed_mps": 0.21597002555804207
+          }
+        },
+        "recovery_search_start_step": 733,
+        "recovery_hold_start_step": 752,
+        "recovery_confirmation_step": 760,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.09153884787333633,
+          "right": 0.04407400314105938
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.011319659845142948,
+          "right": 0.0412074934117728
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 9.599749579007039,
+        "maximum_hand_step_displacement_m": 0.10148342432822481,
+        "maximum_head_hand_distance_m": 0.5855759759819567,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "411499cb0412a934",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_161329_535819589_2440848_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_161329_535819589_2440848_hri_training_ready_v1",
+      "episode_name": "episode_000001",
+      "source_episode": "episode_000001",
+      "start_step": 326,
+      "core_start_step": 356,
+      "core_end_step": 401,
+      "end_step": 431,
+      "length": 105,
+      "target_severity": "gate_only",
+      "cube_index": 0,
+      "attempt_index": 1,
+      "task_phase": "release_cube",
+      "task_phase_index": 3,
+      "controller_event": 6,
+      "phase_anchor_step": 389,
+      "trigger_task_phase": "grasp_cube",
+      "trigger_controller_event": 2,
+      "source_anchor_step": 326,
+      "source_anchor_ee_pos": [
+        0.3960844576358795,
+        0.22137776017189026,
+        1.0217152833938599
+      ],
+      "recorded_min_surface_gap_m": 0.0782470703125,
+      "recorded_contact": false,
+      "recorded_closest_link_id": 4,
+      "recorded_closest_hand_id": 2,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000001",
+        "active_cube_index": 0,
+        "active_cube_name": "cube_0",
+        "collection_seed": 8258517330145277582,
+        "layout_seed": 8084149641433173819,
+        "layout_id": "1149b957ca3cdd74",
+        "measured_layout_id": "1149b957ca3cdd74",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3961091935634613,
+            0.17642106115818024,
+            0.9757500290870667
+          ],
+          [
+            0.6287686228752136,
+            0.047154877334833145,
+            0.9757500290870667
+          ],
+          [
+            0.3219398856163025,
+            -0.006101603154093027,
+            0.9757500290870667
+          ],
+          [
+            0.5194756388664246,
+            -0.13065099716186523,
+            0.9757500290870667
+          ],
+          [
+            0.5308182239532471,
+            0.20332838594913483,
+            0.9757500290870667
+          ],
+          [
+            0.3672964572906494,
+            -0.20836427807807922,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.01200008112937212,
+          -0.5699905753135681,
+          -1.9922437033415008e-08,
+          -2.8100028038024902,
+          -1.68217286500294e-06,
+          3.036999464035034,
+          0.7410019636154175,
+          0.03999999165534973,
+          0.03999999165534973
+        ],
+        "robot_initial_joint_velocities": [
+          -9.685367331258021e-06,
+          -0.0009661110816523433,
+          1.6135901432789979e-06,
+          0.00041064328979700804,
+          0.00016952799342107028,
+          9.612456778995693e-06,
+          -0.0001846130908234045,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 326,
+        "source_anchor_ee_pos": [
+          0.3960844576358795,
+          0.22137776017189026,
+          1.0217152833938599
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          -7.512917363783345e-05,
+          1.0,
+          0.0001150369644165039,
+          -7.139577064663172e-05
+        ],
+        "source_anchor_robot_joint_positions": [
+          0.3351078927516937,
+          0.3729269802570343,
+          0.06864666193723679,
+          -2.571607828140259,
+          -0.12548257410526276,
+          2.9421346187591553,
+          1.307239294052124,
+          0.039999935775995255,
+          0.039999935775995255
+        ],
+        "source_anchor_robot_joint_velocities": [
+          0.044327691197395325,
+          0.042350560426712036,
+          -0.037699371576309204,
+          0.011598861776292324,
+          0.03485524281859398,
+          0.033723000437021255,
+          -0.02476719208061695,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 326,
+      "risk_window_end_step": 431,
+      "human_motion_start_step": 326,
+      "human_motion_end_step": 435,
+      "human_motion_length": 109,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 326,
+        "end_step_exclusive": 435,
+        "length": 109,
+        "risk_window_start_step": 326,
+        "risk_window_end_step_exclusive": 431,
+        "risk_core_start_step": 356,
+        "risk_core_end_step_exclusive": 401,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 318,
+            "end_step_exclusive": 326,
+            "head_relative_position_m": [
+              -0.542131632566452,
+              -0.1916906237602234,
+              -0.4471484422683716
+            ],
+            "maximum_speed_mps": 0.078624728487611
+          },
+          "right": {
+            "start_step": 318,
+            "end_step_exclusive": 326,
+            "head_relative_position_m": [
+              -0.20026066899299622,
+              0.1262064464390278,
+              -0.41965436935424805
+            ],
+            "maximum_speed_mps": 0.06474593903456362
+          }
+        },
+        "recovery_search_start_step": 401,
+        "recovery_hold_start_step": 426,
+        "recovery_confirmation_step": 434,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.13630904959955997,
+          "right": 0.0754707047214557
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.04185212369803036,
+          "right": 0.0192180928080269
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 7.0710521589790005,
+        "maximum_hand_step_displacement_m": 0.1388782065321873,
+        "maximum_head_hand_distance_m": 0.730561722530748,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "cb32741689b89da6",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_161329_535819589_2440848_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_161329_535819589_2440848_hri_training_ready_v1",
+      "episode_name": "episode_000001",
+      "source_episode": "episode_000001",
+      "start_step": 1347,
+      "core_start_step": 1377,
+      "core_end_step": 1478,
+      "end_step": 1508,
+      "length": 161,
+      "target_severity": "collision",
+      "cube_index": 1,
+      "attempt_index": 2,
+      "task_phase": "release_cube",
+      "task_phase_index": 3,
+      "controller_event": 6,
+      "phase_anchor_step": 1461,
+      "trigger_task_phase": "release_cube",
+      "trigger_controller_event": 6,
+      "source_anchor_step": 1347,
+      "source_anchor_ee_pos": [
+        0.5407918691635132,
+        -0.15294301509857178,
+        1.211612582206726
+      ],
+      "recorded_min_surface_gap_m": -0.0004627342277672142,
+      "recorded_contact": true,
+      "recorded_closest_link_id": 6,
+      "recorded_closest_hand_id": 2,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000001",
+        "active_cube_index": 1,
+        "active_cube_name": "cube_1",
+        "collection_seed": 8258517330145277582,
+        "layout_seed": 8084149641433173819,
+        "layout_id": "1149b957ca3cdd74",
+        "measured_layout_id": "1149b957ca3cdd74",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3961091935634613,
+            0.17642106115818024,
+            0.9757500290870667
+          ],
+          [
+            0.6287686228752136,
+            0.047154877334833145,
+            0.9757500290870667
+          ],
+          [
+            0.3219398856163025,
+            -0.006101603154093027,
+            0.9757500290870667
+          ],
+          [
+            0.5194756388664246,
+            -0.13065099716186523,
+            0.9757500290870667
+          ],
+          [
+            0.5308182239532471,
+            0.20332838594913483,
+            0.9757500290870667
+          ],
+          [
+            0.3672964572906494,
+            -0.20836427807807922,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.01200008112937212,
+          -0.5699905753135681,
+          -1.9922437033415008e-08,
+          -2.8100028038024902,
+          -1.68217286500294e-06,
+          3.036999464035034,
+          0.7410019636154175,
+          0.03999999165534973,
+          0.03999999165534973
+        ],
+        "robot_initial_joint_velocities": [
+          -9.685367331258021e-06,
+          -0.0009661110816523433,
+          1.6135901432789979e-06,
+          0.00041064328979700804,
+          0.00016952799342107028,
+          9.612456778995693e-06,
+          -0.0001846130908234045,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 1347,
+        "source_anchor_ee_pos": [
+          0.5407918691635132,
+          -0.15294301509857178,
+          1.211612582206726
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          -0.0002537350228521973,
+          0.9999935626983643,
+          -0.0035434365272521973,
+          0.0004911054274998605
+        ],
+        "source_anchor_robot_joint_positions": [
+          -0.19765114784240723,
+          0.19973047077655792,
+          -0.1252397745847702,
+          -2.1173243522644043,
+          0.03480060026049614,
+          2.316004991531372,
+          0.4484739601612091,
+          0.0260606836527586,
+          0.0260606836527586
+        ],
+        "source_anchor_robot_joint_velocities": [
+          -0.15587307512760162,
+          0.333036869764328,
+          -0.04849263280630112,
+          0.36465853452682495,
+          0.10386829823255539,
+          -0.03909234330058098,
+          -0.27289870381355286,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 1347,
+      "risk_window_end_step": 1508,
+      "human_motion_start_step": 1347,
+      "human_motion_end_step": 1499,
+      "human_motion_length": 152,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 1347,
+        "end_step_exclusive": 1499,
+        "length": 152,
+        "risk_window_start_step": 1347,
+        "risk_window_end_step_exclusive": 1508,
+        "risk_core_start_step": 1377,
+        "risk_core_end_step_exclusive": 1478,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 1354,
+            "end_step_exclusive": 1377,
+            "head_relative_position_m": [
+              -0.1523032784461975,
+              -0.22852250933647156,
+              -0.44676870107650757
+            ],
+            "maximum_speed_mps": 0.22829064516265768
+          },
+          "right": {
+            "start_step": 1339,
+            "end_step_exclusive": 1347,
+            "head_relative_position_m": [
+              -0.23558366298675537,
+              0.029785262886434793,
+              -0.4126667380332947
+            ],
+            "maximum_speed_mps": 0.023292086595683176
+          }
+        },
+        "recovery_search_start_step": 1478,
+        "recovery_hold_start_step": 1489,
+        "recovery_confirmation_step": 1498,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.11678934032567351,
+          "right": 0.11032826705134992
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.050785291514913615,
+          "right": 0.05126490247808242
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 9.426183325995225,
+        "maximum_hand_step_displacement_m": 0.04493815846982814,
+        "maximum_head_hand_distance_m": 0.5334278766460152,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "5702235ad299ed14",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_161329_535819589_2440848_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_161329_535819589_2440848_hri_training_ready_v1",
+      "episode_name": "episode_000002",
+      "source_episode": "episode_000002",
+      "start_step": 752,
+      "core_start_step": 782,
+      "core_end_step": 822,
+      "end_step": 852,
+      "length": 100,
+      "target_severity": "gate_only",
+      "cube_index": 1,
+      "attempt_index": 2,
+      "task_phase": "approach_cube",
+      "task_phase_index": 0,
+      "controller_event": 1,
+      "phase_anchor_step": 794,
+      "trigger_task_phase": "approach_cube",
+      "trigger_controller_event": 0,
+      "source_anchor_step": 752,
+      "source_anchor_ee_pos": [
+        0.5816235542297363,
+        0.05362096428871155,
+        1.2169404029846191
+      ],
+      "recorded_min_surface_gap_m": 0.091064453125,
+      "recorded_contact": false,
+      "recorded_closest_link_id": 5,
+      "recorded_closest_hand_id": 1,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000002",
+        "active_cube_index": 1,
+        "active_cube_name": "cube_1",
+        "collection_seed": 8258517330145277582,
+        "layout_seed": 8084149641433173819,
+        "layout_id": "1149b957ca3cdd74",
+        "measured_layout_id": "1149b957ca3cdd74",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3961091935634613,
+            0.17642106115818024,
+            0.9757500290870667
+          ],
+          [
+            0.6287686228752136,
+            0.047154877334833145,
+            0.9757500290870667
+          ],
+          [
+            0.3219398856163025,
+            -0.006101603154093027,
+            0.9757500290870667
+          ],
+          [
+            0.5194756388664246,
+            -0.13065099716186523,
+            0.9757500290870667
+          ],
+          [
+            0.5308182239532471,
+            0.20332838594913483,
+            0.9757500290870667
+          ],
+          [
+            0.3672964572906494,
+            -0.20836427807807922,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.01200008112937212,
+          -0.5699905753135681,
+          -1.9922437033415008e-08,
+          -2.8100028038024902,
+          -1.68217286500294e-06,
+          3.036999464035034,
+          0.7410019636154175,
+          0.03999999165534973,
+          0.03999999165534973
+        ],
+        "robot_initial_joint_velocities": [
+          -9.685367331258021e-06,
+          -0.0009661110816523433,
+          1.6135901432789979e-06,
+          0.00041064328979700804,
+          0.00016952799342107028,
+          9.612456778995693e-06,
+          -0.0001846130908234045,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 752,
+        "source_anchor_ee_pos": [
+          0.5816235542297363,
+          0.05362096428871155,
+          1.2169404029846191
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          -0.00040582960355095565,
+          0.9999967813491821,
+          0.002526402473449707,
+          0.00030789183801971376
+        ],
+        "source_anchor_robot_joint_positions": [
+          -0.020239340141415596,
+          0.2236652970314026,
+          0.045027993619441986,
+          -2.0656795501708984,
+          -0.012207165360450745,
+          2.289721727371216,
+          0.8120473027229309,
+          0.03999990224838257,
+          0.03999990224838257
+        ],
+        "source_anchor_robot_joint_velocities": [
+          0.14677275717258453,
+          0.31378546357154846,
+          0.030614791437983513,
+          0.2880571186542511,
+          -0.03247137367725372,
+          0.027297187596559525,
+          0.20757606625556946,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 752,
+      "risk_window_end_step": 852,
+      "human_motion_start_step": 752,
+      "human_motion_end_step": 831,
+      "human_motion_length": 79,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 752,
+        "end_step_exclusive": 831,
+        "length": 79,
+        "risk_window_start_step": 752,
+        "risk_window_end_step_exclusive": 852,
+        "risk_core_start_step": 782,
+        "risk_core_end_step_exclusive": 822,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 746,
+            "end_step_exclusive": 752,
+            "head_relative_position_m": [
+              -0.16459199786186218,
+              -0.10073984041810036,
+              -0.4435623288154602
+            ],
+            "maximum_speed_mps": 0.04656575969757349
+          },
+          "right": {
+            "start_step": 746,
+            "end_step_exclusive": 752,
+            "head_relative_position_m": [
+              -0.1605173945426941,
+              -0.012168874964118004,
+              -0.4090522229671478
+            ],
+            "maximum_speed_mps": 0.1856546756680499
+          }
+        },
+        "recovery_search_start_step": 822,
+        "recovery_hold_start_step": 822,
+        "recovery_confirmation_step": 830,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.05127615467203888,
+          "right": 0.05423221970001451
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.010159263365615224,
+          "right": 0.010850055175325314
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 4.88880016899202,
+        "maximum_hand_step_displacement_m": 0.026855944604947186,
+        "maximum_head_hand_distance_m": 0.5101799163215637,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "cc2f20dab45c440c",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_161329_535819589_2440848_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260730_161329_535819589_2440848_hri_training_ready_v1",
+      "episode_name": "episode_000002",
+      "source_episode": "episode_000002",
+      "start_step": 1065,
+      "core_start_step": 1095,
+      "core_end_step": 1194,
+      "end_step": 1224,
+      "length": 159,
+      "target_severity": "collision",
+      "cube_index": 1,
+      "attempt_index": 2,
+      "task_phase": "release_cube",
+      "task_phase_index": 3,
+      "controller_event": 6,
+      "phase_anchor_step": 1174,
+      "trigger_task_phase": "release_cube",
+      "trigger_controller_event": 6,
+      "source_anchor_step": 1065,
+      "source_anchor_ee_pos": [
+        0.540707528591156,
+        -0.14650575816631317,
+        1.2074406147003174
+      ],
+      "recorded_min_surface_gap_m": -0.006173343863338232,
+      "recorded_contact": true,
+      "recorded_closest_link_id": 6,
+      "recorded_closest_hand_id": 2,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000002",
+        "active_cube_index": 1,
+        "active_cube_name": "cube_1",
+        "collection_seed": 8258517330145277582,
+        "layout_seed": 8084149641433173819,
+        "layout_id": "1149b957ca3cdd74",
+        "measured_layout_id": "1149b957ca3cdd74",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3961091935634613,
+            0.17642106115818024,
+            0.9757500290870667
+          ],
+          [
+            0.6287686228752136,
+            0.047154877334833145,
+            0.9757500290870667
+          ],
+          [
+            0.3219398856163025,
+            -0.006101603154093027,
+            0.9757500290870667
+          ],
+          [
+            0.5194756388664246,
+            -0.13065099716186523,
+            0.9757500290870667
+          ],
+          [
+            0.5308182239532471,
+            0.20332838594913483,
+            0.9757500290870667
+          ],
+          [
+            0.3672964572906494,
+            -0.20836427807807922,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.01200008112937212,
+          -0.5699905753135681,
+          -1.9922437033415008e-08,
+          -2.8100028038024902,
+          -1.68217286500294e-06,
+          3.036999464035034,
+          0.7410019636154175,
+          0.03999999165534973,
+          0.03999999165534973
+        ],
+        "robot_initial_joint_velocities": [
+          -9.685367331258021e-06,
+          -0.0009661110816523433,
+          1.6135901432789979e-06,
+          0.00041064328979700804,
+          0.00016952799342107028,
+          9.612456778995693e-06,
+          -0.0001846130908234045,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 1065,
+        "source_anchor_ee_pos": [
+          0.540707528591156,
+          -0.14650575816631317,
+          1.2074406147003174
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          0.00023935092031024396,
+          0.9999949932098389,
+          -0.0031387507915496826,
+          0.0004906995454803109
+        ],
+        "source_anchor_robot_joint_positions": [
+          -0.19317370653152466,
+          0.20062074065208435,
+          -0.1184527724981308,
+          -2.1282339096069336,
+          0.0321977473795414,
+          2.3283073902130127,
+          0.4603012204170227,
+          0.02606211230158806,
+          0.02606211230158806
+        ],
+        "source_anchor_robot_joint_velocities": [
+          -0.175295889377594,
+          0.30733510851860046,
+          -0.06235870346426964,
+          0.33207228779792786,
+          0.10180582851171494,
+          -0.03237082436680794,
+          -0.3005034327507019,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 1065,
+      "risk_window_end_step": 1224,
+      "human_motion_start_step": 1065,
+      "human_motion_end_step": 1216,
+      "human_motion_length": 151,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 1065,
+        "end_step_exclusive": 1216,
+        "length": 151,
+        "risk_window_start_step": 1065,
+        "risk_window_end_step_exclusive": 1224,
+        "risk_core_start_step": 1095,
+        "risk_core_end_step_exclusive": 1194,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 1058,
+            "end_step_exclusive": 1065,
+            "head_relative_position_m": [
+              -0.22559183835983276,
+              -0.10821264982223511,
+              -0.4505677819252014
+            ],
+            "maximum_speed_mps": 0.03828898863251248
+          },
+          "right": {
+            "start_step": 1058,
+            "end_step_exclusive": 1065,
+            "head_relative_position_m": [
+              -0.13416600227355957,
+              -0.03688504174351692,
+              -0.39884769916534424
+            ],
+            "maximum_speed_mps": 0.046169505203317404
+          }
+        },
+        "recovery_search_start_step": 1194,
+        "recovery_hold_start_step": 1207,
+        "recovery_confirmation_step": 1215,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.05926877166775703,
+          "right": 0.12498768021480287
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.019101274009333973,
+          "right": 0.08843897964231275
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 9.416152170975693,
+        "maximum_hand_step_displacement_m": 0.033832176823374444,
+        "maximum_head_hand_distance_m": 0.5652775861799723,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "13479fc807f857ab",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260801_000831_362023440_4082633_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260801_000831_362023440_4082633_hri_training_ready_v1",
+      "episode_name": "episode_000000",
+      "source_episode": "episode_000000",
+      "start_step": 305,
+      "core_start_step": 335,
+      "core_end_step": 346,
+      "end_step": 376,
+      "length": 71,
+      "target_severity": "gate_only",
+      "cube_index": 0,
+      "attempt_index": 1,
+      "task_phase": "move_to_target",
+      "task_phase_index": 2,
+      "controller_event": 4,
+      "phase_anchor_step": 339,
+      "trigger_task_phase": "approach_cube",
+      "trigger_controller_event": 1,
+      "source_anchor_step": 305,
+      "source_anchor_ee_pos": [
+        0.3223269283771515,
+        -0.15254873037338257,
+        1.03302001953125
+      ],
+      "recorded_min_surface_gap_m": 0.127685546875,
+      "recorded_contact": false,
+      "recorded_closest_link_id": 4,
+      "recorded_closest_hand_id": 1,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000000",
+        "active_cube_index": 0,
+        "active_cube_name": "cube_0",
+        "collection_seed": 3499732951603058784,
+        "layout_seed": 8684940779247147958,
+        "layout_id": "7bbc6d214e9f1aa4",
+        "measured_layout_id": "7bbc6d214e9f1aa4",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3222959637641907,
+            -0.1976589858531952,
+            0.9757500290870667
+          ],
+          [
+            0.41581663489341736,
+            0.054754555225372314,
+            0.9757500290870667
+          ],
+          [
+            0.3727478086948395,
+            0.20784693956375122,
+            0.9757500290870667
+          ],
+          [
+            0.49186745285987854,
+            -0.12997502088546753,
+            0.9757500290870667
+          ],
+          [
+            0.5382125377655029,
+            0.1314103603363037,
+            0.9757500290870667
+          ],
+          [
+            0.3320997953414917,
+            -0.0603305883705616,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.012000128626823425,
+          -0.5699884295463562,
+          -3.4133133652858305e-08,
+          -2.8100030422210693,
+          -2.8140511858509853e-06,
+          3.036999464035034,
+          0.7410036325454712,
+          0.03999999910593033,
+          0.03999999910593033
+        ],
+        "robot_initial_joint_velocities": [
+          -1.270346183446236e-05,
+          -0.0011893537594005466,
+          3.323223381812568e-06,
+          0.00046929423115216196,
+          0.00027410543407313526,
+          2.1403860955615528e-05,
+          -0.00029632559744641185,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 305,
+        "source_anchor_ee_pos": [
+          0.3223269283771515,
+          -0.15254873037338257,
+          1.03302001953125
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          0.00018550596723798662,
+          0.9999999403953552,
+          -0.00030982494354248047,
+          -0.0002536925021559
+        ],
+        "source_anchor_robot_joint_positions": [
+          -0.34867194294929504,
+          0.25262776017189026,
+          -0.13023628294467926,
+          -2.762589693069458,
+          0.24371030926704407,
+          3.0090107917785645,
+          0.06953585147857666,
+          0.03999999910593033,
+          0.03999999910593033
+        ],
+        "source_anchor_robot_joint_velocities": [
+          -0.21229727566242218,
+          0.17018970847129822,
+          0.21186226606369019,
+          0.042512793093919754,
+          0.01830722764134407,
+          0.13765805959701538,
+          -0.021677443757653236,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 305,
+      "risk_window_end_step": 376,
+      "human_motion_start_step": 305,
+      "human_motion_end_step": 419,
+      "human_motion_length": 114,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 305,
+        "end_step_exclusive": 419,
+        "length": 114,
+        "risk_window_start_step": 305,
+        "risk_window_end_step_exclusive": 376,
+        "risk_core_start_step": 335,
+        "risk_core_end_step_exclusive": 346,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 298,
+            "end_step_exclusive": 305,
+            "head_relative_position_m": [
+              -0.3176090121269226,
+              -0.08953561633825302,
+              -0.3793032169342041
+            ],
+            "maximum_speed_mps": 0.04111424156911722
+          },
+          "right": {
+            "start_step": 315,
+            "end_step_exclusive": 335,
+            "head_relative_position_m": [
+              -0.27235937118530273,
+              0.06460962444543839,
+              -0.25739777088165283
+            ],
+            "maximum_speed_mps": 0.15989666436936684
+          }
+        },
+        "recovery_search_start_step": 346,
+        "recovery_hold_start_step": 410,
+        "recovery_confirmation_step": 418,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.04728905725912432,
+          "right": 0.06561888891670879
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.0439972552368166,
+          "right": 0.02979145575081183
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 7.402726400992833,
+        "maximum_hand_step_displacement_m": 0.06414300969332525,
+        "maximum_head_hand_distance_m": 0.7070815859971855,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "d8c74b23e568535b",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_14sessions_training_ready_v1/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260801_000831_362023440_4082633_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260801_000831_362023440_4082633_hri_training_ready_v1",
+      "episode_name": "episode_000002",
+      "source_episode": "episode_000002",
+      "start_step": 642,
+      "core_start_step": 672,
+      "core_end_step": 756,
+      "end_step": 786,
+      "length": 144,
+      "target_severity": "collision",
+      "cube_index": 1,
+      "attempt_index": 2,
+      "task_phase": "approach_cube",
+      "task_phase_index": 0,
+      "controller_event": 1,
+      "phase_anchor_step": 738,
+      "trigger_task_phase": "approach_cube",
+      "trigger_controller_event": 1,
+      "source_anchor_step": 642,
+      "source_anchor_ee_pos": [
+        0.4510353207588196,
+        0.05585339665412903,
+        1.2327609062194824
+      ],
+      "recorded_min_surface_gap_m": -0.01169203594326973,
+      "recorded_contact": true,
+      "recorded_closest_link_id": 5,
+      "recorded_closest_hand_id": 2,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000002",
+        "active_cube_index": 1,
+        "active_cube_name": "cube_1",
+        "collection_seed": 3499732951603058784,
+        "layout_seed": 8684940779247147958,
+        "layout_id": "7bbc6d214e9f1aa4",
+        "measured_layout_id": "7bbc6d214e9f1aa4",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3222959637641907,
+            -0.1976589858531952,
+            0.9757500290870667
+          ],
+          [
+            0.41581663489341736,
+            0.054754555225372314,
+            0.9757500290870667
+          ],
+          [
+            0.3727478086948395,
+            0.20784693956375122,
+            0.9757500290870667
+          ],
+          [
+            0.49186745285987854,
+            -0.12997502088546753,
+            0.9757500290870667
+          ],
+          [
+            0.5382125377655029,
+            0.1314103603363037,
+            0.9757500290870667
+          ],
+          [
+            0.3320997953414917,
+            -0.0603305883705616,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.01200008112937212,
+          -0.5699905753135681,
+          -1.9922437033415008e-08,
+          -2.8100028038024902,
+          -1.68217286500294e-06,
+          3.036999464035034,
+          0.7410019636154175,
+          0.03999999165534973,
+          0.03999999165534973
+        ],
+        "robot_initial_joint_velocities": [
+          -9.685367331258021e-06,
+          -0.0009661110816523433,
+          1.6135901432789979e-06,
+          0.00041064328979700804,
+          0.00016952799342107028,
+          9.612456778995693e-06,
+          -0.0001846130908234045,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 642,
+        "source_anchor_ee_pos": [
+          0.4510353207588196,
+          0.05585339665412903,
+          1.2327609062194824
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          -0.0009335214272141457,
+          0.9999797344207764,
+          0.006263762712478638,
+          -0.0006285537965595722
+        ],
+        "source_anchor_robot_joint_positions": [
+          -0.027907773852348328,
+          -0.15754234790802002,
+          0.06281883269548416,
+          -2.503244638442993,
+          0.01643107458949089,
+          2.344735622406006,
+          0.795507550239563,
+          0.03999985381960869,
+          0.03999985381960869
+        ],
+        "source_anchor_robot_joint_velocities": [
+          0.13747479021549225,
+          -0.13786685466766357,
+          0.10828237980604172,
+          -0.38568443059921265,
+          0.02911139838397503,
+          0.2559516131877899,
+          0.26329505443573,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 642,
+      "risk_window_end_step": 786,
+      "human_motion_start_step": 642,
+      "human_motion_end_step": 804,
+      "human_motion_length": 162,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 642,
+        "end_step_exclusive": 804,
+        "length": 162,
+        "risk_window_start_step": 642,
+        "risk_window_end_step_exclusive": 786,
+        "risk_core_start_step": 672,
+        "risk_core_end_step_exclusive": 756,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 634,
+            "end_step_exclusive": 642,
+            "head_relative_position_m": [
+              -0.3082939684391022,
+              0.028823789209127426,
+              -0.39023008942604065
+            ],
+            "maximum_speed_mps": 0.020256672140525067
+          },
+          "right": {
+            "start_step": 648,
+            "end_step_exclusive": 672,
+            "head_relative_position_m": [
+              -0.357173889875412,
+              0.18432648293673992,
+              -0.38768279552459717
+            ],
+            "maximum_speed_mps": 0.24362199690985992
+          }
+        },
+        "recovery_search_start_step": 756,
+        "recovery_hold_start_step": 794,
+        "recovery_confirmation_step": 803,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.07321315426982557,
+          "right": 0.09573039359005092
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.03999575904697729,
+          "right": 0.02984597625296266
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 10.17892772599589,
+        "maximum_hand_step_displacement_m": 0.06690609537081935,
+        "maximum_head_hand_distance_m": 0.6327710880220009,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "5f094b483b9220f1",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_sessions17_24_training_ready_v1/hri_p01_sessions17-24_training_ready_v1/hdf5/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260805_200049_344919066_1681583_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260805_200049_344919066_1681583_hri_training_ready_v1",
+      "episode_name": "episode_000000",
+      "source_episode": "episode_000000",
+      "start_step": 1374,
+      "core_start_step": 1387,
+      "core_end_step": 1433,
+      "end_step": 1463,
+      "length": 89,
+      "target_severity": "gate_only",
+      "cube_index": 2,
+      "attempt_index": 3,
+      "task_phase": "approach_cube",
+      "task_phase_index": 0,
+      "controller_event": 0,
+      "phase_anchor_step": 1392,
+      "trigger_task_phase": "approach_cube",
+      "trigger_controller_event": 0,
+      "source_anchor_step": 1374,
+      "source_anchor_ee_pos": [
+        0.5996590256690979,
+        -0.20482665300369263,
+        1.182208776473999
+      ],
+      "recorded_min_surface_gap_m": 0.12109375,
+      "recorded_contact": false,
+      "recorded_closest_link_id": 6,
+      "recorded_closest_hand_id": 1,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000000",
+        "active_cube_index": 2,
+        "active_cube_name": "cube_2",
+        "collection_seed": 1802216756350987022,
+        "layout_seed": 7157248371665999525,
+        "layout_id": "f551148f3d715f52",
+        "measured_layout_id": "f551148f3d715f52",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.5065551996231079,
+            0.125771626830101,
+            0.9757500290870667
+          ],
+          [
+            0.5233895778656006,
+            -0.04631100594997406,
+            0.9757500290870667
+          ],
+          [
+            0.3110417127609253,
+            0.07824812829494476,
+            0.9757500290870667
+          ],
+          [
+            0.3492331802845001,
+            -0.21601292490959167,
+            0.9757500290870667
+          ],
+          [
+            0.43182459473609924,
+            0.24585910141468048,
+            0.9757500290870667
+          ],
+          [
+            0.3091987371444702,
+            -0.07637906819581985,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.012000128626823425,
+          -0.5699884295463562,
+          -3.4133133652858305e-08,
+          -2.8100030422210693,
+          -2.8140511858509853e-06,
+          3.036999464035034,
+          0.7410036325454712,
+          0.03999999910593033,
+          0.03999999910593033
+        ],
+        "robot_initial_joint_velocities": [
+          -1.270346183446236e-05,
+          -0.0011893537594005466,
+          3.323223381812568e-06,
+          0.00046929423115216196,
+          0.00027410543407313526,
+          2.1403860955615528e-05,
+          -0.00029632559744641185,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 1374,
+        "source_anchor_ee_pos": [
+          0.5996590256690979,
+          -0.20482665300369263,
+          1.182208776473999
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          0.0001296286063734442,
+          1.0,
+          -6.097555160522461e-05,
+          0.0002215135027654469
+        ],
+        "source_anchor_robot_joint_positions": [
+          -0.3302187919616699,
+          0.45341360569000244,
+          -0.06339122354984283,
+          -1.8159297704696655,
+          0.03613092750310898,
+          2.2687389850616455,
+          0.375089555978775,
+          0.039999984204769135,
+          0.039999984204769135
+        ],
+        "source_anchor_robot_joint_velocities": [
+          0.007349190767854452,
+          -0.06173643842339516,
+          -0.009665761142969131,
+          0.026470832526683807,
+          -0.002162402495741844,
+          -0.08521423488855362,
+          0.0015184554504230618,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 1374,
+      "risk_window_end_step": 1463,
+      "human_motion_start_step": 1374,
+      "human_motion_end_step": 1502,
+      "human_motion_length": 128,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 1374,
+        "end_step_exclusive": 1502,
+        "length": 128,
+        "risk_window_start_step": 1374,
+        "risk_window_end_step_exclusive": 1463,
+        "risk_core_start_step": 1387,
+        "risk_core_end_step_exclusive": 1433,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 1367,
+            "end_step_exclusive": 1374,
+            "head_relative_position_m": [
+              -0.4857715368270874,
+              0.2629021480679512,
+              -0.2683858871459961
+            ],
+            "maximum_speed_mps": 0.10973310694924321
+          },
+          "right": {
+            "start_step": 1367,
+            "end_step_exclusive": 1374,
+            "head_relative_position_m": [
+              -0.40634387731552124,
+              0.390851154923439,
+              -0.26505231857299805
+            ],
+            "maximum_speed_mps": 0.029215155358349888
+          }
+        },
+        "recovery_search_start_step": 1433,
+        "recovery_hold_start_step": 1494,
+        "recovery_confirmation_step": 1501,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.1336337220589153,
+          "right": 0.14947962787942967
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.039892677221703865,
+          "right": 0.03358439187414688
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 8.751650389982387,
+        "maximum_hand_step_displacement_m": 0.09703107851426152,
+        "maximum_head_hand_distance_m": 0.8822941307159707,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "5903aea975180b21",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_sessions17_24_training_ready_v1/hri_p01_sessions17-24_training_ready_v1/hdf5/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260805_200049_344919066_1681583_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260805_200049_344919066_1681583_hri_training_ready_v1",
+      "episode_name": "episode_000000",
+      "source_episode": "episode_000000",
+      "start_step": 1590,
+      "core_start_step": 1620,
+      "core_end_step": 1653,
+      "end_step": 1683,
+      "length": 93,
+      "target_severity": "gate_only",
+      "cube_index": 2,
+      "attempt_index": 3,
+      "task_phase": "approach_cube",
+      "task_phase_index": 0,
+      "controller_event": 1,
+      "phase_anchor_step": 1643,
+      "trigger_task_phase": "approach_cube",
+      "trigger_controller_event": 1,
+      "source_anchor_step": 1590,
+      "source_anchor_ee_pos": [
+        0.310794860124588,
+        0.1233658641576767,
+        1.0850681066513062
+      ],
+      "recorded_min_surface_gap_m": 0.0987548828125,
+      "recorded_contact": false,
+      "recorded_closest_link_id": 4,
+      "recorded_closest_hand_id": 2,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000000",
+        "active_cube_index": 2,
+        "active_cube_name": "cube_2",
+        "collection_seed": 1802216756350987022,
+        "layout_seed": 7157248371665999525,
+        "layout_id": "f551148f3d715f52",
+        "measured_layout_id": "f551148f3d715f52",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.5065551996231079,
+            0.125771626830101,
+            0.9757500290870667
+          ],
+          [
+            0.5233895778656006,
+            -0.04631100594997406,
+            0.9757500290870667
+          ],
+          [
+            0.3110417127609253,
+            0.07824812829494476,
+            0.9757500290870667
+          ],
+          [
+            0.3492331802845001,
+            -0.21601292490959167,
+            0.9757500290870667
+          ],
+          [
+            0.43182459473609924,
+            0.24585910141468048,
+            0.9757500290870667
+          ],
+          [
+            0.3091987371444702,
+            -0.07637906819581985,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.012000128626823425,
+          -0.5699884295463562,
+          -3.4133133652858305e-08,
+          -2.8100030422210693,
+          -2.8140511858509853e-06,
+          3.036999464035034,
+          0.7410036325454712,
+          0.03999999910593033,
+          0.03999999910593033
+        ],
+        "robot_initial_joint_velocities": [
+          -1.270346183446236e-05,
+          -0.0011893537594005466,
+          3.323223381812568e-06,
+          0.00046929423115216196,
+          0.00027410543407313526,
+          2.1403860955615528e-05,
+          -0.00029632559744641185,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 1590,
+        "source_anchor_ee_pos": [
+          0.310794860124588,
+          0.1233658641576767,
+          1.0850681066513062
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          -0.00013642397243529558,
+          0.9999999403953552,
+          0.0003489553928375244,
+          -0.00010761095472844318
+        ],
+        "source_anchor_robot_joint_positions": [
+          0.06722473353147507,
+          -0.0656011700630188,
+          0.21215759217739105,
+          -2.964487314224243,
+          0.0590287521481514,
+          2.8998160362243652,
+          1.0063223838806152,
+          0.03999939560890198,
+          0.03999939560890198
+        ],
+        "source_anchor_robot_joint_velocities": [
+          -0.05519891530275345,
+          0.3591075837612152,
+          -0.009891518391668797,
+          0.030273528769612312,
+          -0.23500694334506989,
+          0.32550057768821716,
+          0.15588060021400452,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 1590,
+      "risk_window_end_step": 1683,
+      "human_motion_start_step": 1590,
+      "human_motion_end_step": 1686,
+      "human_motion_length": 96,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 1590,
+        "end_step_exclusive": 1686,
+        "length": 96,
+        "risk_window_start_step": 1590,
+        "risk_window_end_step_exclusive": 1683,
+        "risk_core_start_step": 1620,
+        "risk_core_end_step_exclusive": 1653,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 1602,
+            "end_step_exclusive": 1620,
+            "head_relative_position_m": [
+              -0.47812676429748535,
+              0.23307467810809612,
+              -0.3312068581581116
+            ],
+            "maximum_speed_mps": 0.2160351267971475
+          },
+          "right": {
+            "start_step": 1583,
+            "end_step_exclusive": 1590,
+            "head_relative_position_m": [
+              -0.4626307487487793,
+              0.4033612906932831,
+              -0.40803980827331543
+            ],
+            "maximum_speed_mps": 0.09138527998662364
+          }
+        },
+        "recovery_search_start_step": 1653,
+        "recovery_hold_start_step": 1677,
+        "recovery_confirmation_step": 1685,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.04966868568544674,
+          "right": 0.1394241217595871
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.03330465698766971,
+          "right": 0.034999170761826064
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 6.227224533911794,
+        "maximum_hand_step_displacement_m": 0.04057111859697212,
+        "maximum_head_hand_distance_m": 0.8910235456083233,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "431ce01bc54d5291",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_sessions17_24_training_ready_v1/hri_p01_sessions17-24_training_ready_v1/hdf5/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_161720_522444864_2596652_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_161720_522444864_2596652_hri_training_ready_v1",
+      "episode_name": "episode_000000",
+      "source_episode": "episode_000000",
+      "start_step": 942,
+      "core_start_step": 972,
+      "core_end_step": 1009,
+      "end_step": 1039,
+      "length": 97,
+      "target_severity": "collision",
+      "cube_index": 1,
+      "attempt_index": 2,
+      "task_phase": "release_cube",
+      "task_phase_index": 3,
+      "controller_event": 6,
+      "phase_anchor_step": 991,
+      "trigger_task_phase": "release_cube",
+      "trigger_controller_event": 6,
+      "source_anchor_step": 942,
+      "source_anchor_ee_pos": [
+        0.4809676706790924,
+        -0.19221505522727966,
+        1.2108097076416016
+      ],
+      "recorded_min_surface_gap_m": -0.010578914545476437,
+      "recorded_contact": true,
+      "recorded_closest_link_id": 6,
+      "recorded_closest_hand_id": 1,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000000",
+        "active_cube_index": 1,
+        "active_cube_name": "cube_1",
+        "collection_seed": 4163879423090644135,
+        "layout_seed": 7652094024922882432,
+        "layout_id": "921e4ca8e66cda5a",
+        "measured_layout_id": "921e4ca8e66cda5a",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3481944501399994,
+            0.14012160897254944,
+            0.9757500290870667
+          ],
+          [
+            0.5034030079841614,
+            0.1387435346841812,
+            0.9757500290870667
+          ],
+          [
+            0.46432143449783325,
+            -0.03321903198957443,
+            0.9757500290870667
+          ],
+          [
+            0.6322780847549438,
+            0.06579312682151794,
+            0.9757500290870667
+          ],
+          [
+            0.4615742862224579,
+            -0.2191157341003418,
+            0.9757500290870667
+          ],
+          [
+            0.3021973967552185,
+            -0.0567963607609272,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.012000128626823425,
+          -0.5699884295463562,
+          -3.4133133652858305e-08,
+          -2.8100030422210693,
+          -2.8140511858509853e-06,
+          3.036999464035034,
+          0.7410036325454712,
+          0.03999999910593033,
+          0.03999999910593033
+        ],
+        "robot_initial_joint_velocities": [
+          -1.270346183446236e-05,
+          -0.0011893537594005466,
+          3.323223381812568e-06,
+          0.00046929423115216196,
+          0.00027410543407313526,
+          2.1403860955615528e-05,
+          -0.00029632559744641185,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 942,
+        "source_anchor_ee_pos": [
+          0.4809676706790924,
+          -0.19221505522727966,
+          1.2108097076416016
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          0.0024646143428981304,
+          0.9988161325454712,
+          -0.04854398965835571,
+          0.0019745021127164364
+        ],
+        "source_anchor_robot_joint_positions": [
+          -0.22983884811401367,
+          0.08456474542617798,
+          -0.1983119547367096,
+          -2.279456615447998,
+          0.019349167123436928,
+          2.3677709102630615,
+          0.44130706787109375,
+          0.02606125921010971,
+          0.02606125921010971
+        ],
+        "source_anchor_robot_joint_velocities": [
+          -0.45198509097099304,
+          0.44345515966415405,
+          0.21684439480304718,
+          0.38569122552871704,
+          0.1517704725265503,
+          0.03579121083021164,
+          -0.09623575955629349,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 942,
+      "risk_window_end_step": 1039,
+      "human_motion_start_step": 942,
+      "human_motion_end_step": 1037,
+      "human_motion_length": 95,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 942,
+        "end_step_exclusive": 1037,
+        "length": 95,
+        "risk_window_start_step": 942,
+        "risk_window_end_step_exclusive": 1039,
+        "risk_core_start_step": 972,
+        "risk_core_end_step_exclusive": 1009,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 935,
+            "end_step_exclusive": 942,
+            "head_relative_position_m": [
+              -0.29387766122817993,
+              0.11577928811311722,
+              -0.468176007270813
+            ],
+            "maximum_speed_mps": 0.10816937638255347
+          },
+          "right": {
+            "start_step": 935,
+            "end_step_exclusive": 942,
+            "head_relative_position_m": [
+              -0.2826159596443176,
+              0.16909508500248194,
+              -0.39400768280029297
+            ],
+            "maximum_speed_mps": 0.1218031802863652
+          }
+        },
+        "recovery_search_start_step": 1009,
+        "recovery_hold_start_step": 1027,
+        "recovery_confirmation_step": 1036,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.06639791807065736,
+          "right": 0.08241780388684289
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.03799229211425642,
+          "right": 0.07064360970741246
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 6.004681753925979,
+        "maximum_hand_step_displacement_m": 0.03718918165110197,
+        "maximum_head_hand_distance_m": 0.6496665586392097,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "99da66b98c374c0d",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_sessions17_24_training_ready_v1/hri_p01_sessions17-24_training_ready_v1/hdf5/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_161720_522444864_2596652_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_161720_522444864_2596652_hri_training_ready_v1",
+      "episode_name": "episode_000001",
+      "source_episode": "episode_000001",
+      "start_step": 274,
+      "core_start_step": 304,
+      "core_end_step": 329,
+      "end_step": 359,
+      "length": 85,
+      "target_severity": "gate_only",
+      "cube_index": 0,
+      "attempt_index": 1,
+      "task_phase": "approach_cube",
+      "task_phase_index": 0,
+      "controller_event": 1,
+      "phase_anchor_step": 310,
+      "trigger_task_phase": "approach_cube",
+      "trigger_controller_event": 1,
+      "source_anchor_step": 274,
+      "source_anchor_ee_pos": [
+        0.3477499186992645,
+        0.18544363975524902,
+        1.0637407302856445
+      ],
+      "recorded_min_surface_gap_m": 0.0830078125,
+      "recorded_contact": false,
+      "recorded_closest_link_id": 4,
+      "recorded_closest_hand_id": 1,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000001",
+        "active_cube_index": 0,
+        "active_cube_name": "cube_0",
+        "collection_seed": 4163879423090644135,
+        "layout_seed": 7652094024922882432,
+        "layout_id": "921e4ca8e66cda5a",
+        "measured_layout_id": "921e4ca8e66cda5a",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3481944501399994,
+            0.14012160897254944,
+            0.9757500290870667
+          ],
+          [
+            0.5034030079841614,
+            0.1387435346841812,
+            0.9757500290870667
+          ],
+          [
+            0.46432143449783325,
+            -0.03321903198957443,
+            0.9757500290870667
+          ],
+          [
+            0.6322780847549438,
+            0.06579312682151794,
+            0.9757500290870667
+          ],
+          [
+            0.4615742862224579,
+            -0.2191157341003418,
+            0.9757500290870667
+          ],
+          [
+            0.3021973967552185,
+            -0.0567963607609272,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.01200008112937212,
+          -0.5699905753135681,
+          -1.9922437033415008e-08,
+          -2.8100028038024902,
+          -1.68217286500294e-06,
+          3.036999464035034,
+          0.7410019636154175,
+          0.03999999165534973,
+          0.03999999165534973
+        ],
+        "robot_initial_joint_velocities": [
+          -9.685367331258021e-06,
+          -0.0009661110816523433,
+          1.6135901432789979e-06,
+          0.00041064328979700804,
+          0.00016952799342107028,
+          9.612456778995693e-06,
+          -0.0001846130908234045,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 274,
+        "source_anchor_ee_pos": [
+          0.3477499186992645,
+          0.18544363975524902,
+          1.0637407302856445
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          -0.00021603232016786933,
+          0.9999993443489075,
+          0.0012148916721343994,
+          -0.00016796603449620306
+        ],
+        "source_anchor_robot_joint_positions": [
+          0.16746437549591064,
+          0.1360350251197815,
+          0.1994694173336029,
+          -2.7844061851501465,
+          -0.11812091618776321,
+          2.9160966873168945,
+          1.2632685899734497,
+          0.03999997302889824,
+          0.03999997302889824
+        ],
+        "source_anchor_robot_joint_velocities": [
+          0.14427825808525085,
+          0.27003875374794006,
+          -0.20870985090732574,
+          0.04676681384444237,
+          -0.22652742266654968,
+          0.21988628804683685,
+          0.16909298300743103,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 274,
+      "risk_window_end_step": 359,
+      "human_motion_start_step": 274,
+      "human_motion_end_step": 405,
+      "human_motion_length": 131,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 274,
+        "end_step_exclusive": 405,
+        "length": 131,
+        "risk_window_start_step": 274,
+        "risk_window_end_step_exclusive": 359,
+        "risk_core_start_step": 304,
+        "risk_core_end_step_exclusive": 329,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 276,
+            "end_step_exclusive": 297,
+            "head_relative_position_m": [
+              -0.34206509590148926,
+              0.044116437435150146,
+              -0.4443866014480591
+            ],
+            "maximum_speed_mps": 0.18206074607013037
+          },
+          "right": {
+            "start_step": 267,
+            "end_step_exclusive": 273,
+            "head_relative_position_m": [
+              -0.3084895610809326,
+              0.29169313609600067,
+              -0.3495457172393799
+            ],
+            "maximum_speed_mps": 0.23151821428046487
+          }
+        },
+        "recovery_search_start_step": 329,
+        "recovery_hold_start_step": 395,
+        "recovery_confirmation_step": 404,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.1295619991375704,
+          "right": 0.1185401926571341
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.022950077492932493,
+          "right": 0.047683393801977905
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 8.497188191046007,
+        "maximum_hand_step_displacement_m": 0.07674572068120152,
+        "maximum_head_hand_distance_m": 0.7927182580797564,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "446476958c725aa2",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_sessions17_24_training_ready_v1/hri_p01_sessions17-24_training_ready_v1/hdf5/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_161720_522444864_2596652_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_161720_522444864_2596652_hri_training_ready_v1",
+      "episode_name": "episode_000001",
+      "source_episode": "episode_000001",
+      "start_step": 1372,
+      "core_start_step": 1402,
+      "core_end_step": 1466,
+      "end_step": 1496,
+      "length": 124,
+      "target_severity": "collision",
+      "cube_index": 1,
+      "attempt_index": 2,
+      "task_phase": "release_cube",
+      "task_phase_index": 3,
+      "controller_event": 6,
+      "phase_anchor_step": 1440,
+      "trigger_task_phase": "release_cube",
+      "trigger_controller_event": 6,
+      "source_anchor_step": 1372,
+      "source_anchor_ee_pos": [
+        0.4926600754261017,
+        -0.20463567972183228,
+        1.2189027070999146
+      ],
+      "recorded_min_surface_gap_m": -0.0019106445834040642,
+      "recorded_contact": true,
+      "recorded_closest_link_id": 6,
+      "recorded_closest_hand_id": 1,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000001",
+        "active_cube_index": 1,
+        "active_cube_name": "cube_1",
+        "collection_seed": 4163879423090644135,
+        "layout_seed": 7652094024922882432,
+        "layout_id": "921e4ca8e66cda5a",
+        "measured_layout_id": "921e4ca8e66cda5a",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3481944501399994,
+            0.14012160897254944,
+            0.9757500290870667
+          ],
+          [
+            0.5034030079841614,
+            0.1387435346841812,
+            0.9757500290870667
+          ],
+          [
+            0.46432143449783325,
+            -0.03321903198957443,
+            0.9757500290870667
+          ],
+          [
+            0.6322780847549438,
+            0.06579312682151794,
+            0.9757500290870667
+          ],
+          [
+            0.4615742862224579,
+            -0.2191157341003418,
+            0.9757500290870667
+          ],
+          [
+            0.3021973967552185,
+            -0.0567963607609272,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.01200008112937212,
+          -0.5699905753135681,
+          -1.9922437033415008e-08,
+          -2.8100028038024902,
+          -1.68217286500294e-06,
+          3.036999464035034,
+          0.7410019636154175,
+          0.03999999165534973,
+          0.03999999165534973
+        ],
+        "robot_initial_joint_velocities": [
+          -9.685367331258021e-06,
+          -0.0009661110816523433,
+          1.6135901432789979e-06,
+          0.00041064328979700804,
+          0.00016952799342107028,
+          9.612456778995693e-06,
+          -0.0001846130908234045,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 1372,
+        "source_anchor_ee_pos": [
+          0.4926600754261017,
+          -0.20463567972183228,
+          1.2189027070999146
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          0.000993303139694035,
+          0.9986125230789185,
+          -0.05262845754623413,
+          0.0015180526534095407
+        ],
+        "source_anchor_robot_joint_positions": [
+          -0.2683183550834656,
+          0.11314429342746735,
+          -0.17313894629478455,
+          -2.2165322303771973,
+          0.025898147374391556,
+          2.3313939571380615,
+          0.43254485726356506,
+          0.026060760021209717,
+          0.026060760021209717
+        ],
+        "source_anchor_robot_joint_velocities": [
+          -0.06584834307432175,
+          0.37260952591896057,
+          0.17591418325901031,
+          0.3706515431404114,
+          0.10343820601701736,
+          -0.012565476819872856,
+          -0.14015741646289825,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 1372,
+      "risk_window_end_step": 1496,
+      "human_motion_start_step": 1372,
+      "human_motion_end_step": 1477,
+      "human_motion_length": 105,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 1372,
+        "end_step_exclusive": 1477,
+        "length": 105,
+        "risk_window_start_step": 1372,
+        "risk_window_end_step_exclusive": 1496,
+        "risk_core_start_step": 1402,
+        "risk_core_end_step_exclusive": 1466,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 1365,
+            "end_step_exclusive": 1372,
+            "head_relative_position_m": [
+              -0.3219701051712036,
+              0.01969015598297119,
+              -0.4097609519958496
+            ],
+            "maximum_speed_mps": 0.1500887672760095
+          },
+          "right": {
+            "start_step": 1365,
+            "end_step_exclusive": 1372,
+            "head_relative_position_m": [
+              -0.3611728549003601,
+              0.22594208642840385,
+              -0.3857889175415039
+            ],
+            "maximum_speed_mps": 0.07975735465474343
+          }
+        },
+        "recovery_search_start_step": 1466,
+        "recovery_hold_start_step": 1469,
+        "recovery_confirmation_step": 1476,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.1417255403334961,
+          "right": 0.04951710863451779
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.027528527169298444,
+          "right": 0.062326440246388275
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 6.6393475129734725,
+        "maximum_hand_step_displacement_m": 0.026692549137981594,
+        "maximum_head_hand_distance_m": 0.6362392691195866,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "f54e95496c71b485",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_sessions17_24_training_ready_v1/hri_p01_sessions17-24_training_ready_v1/hdf5/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_161720_522444864_2596652_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_161720_522444864_2596652_hri_training_ready_v1",
+      "episode_name": "episode_000002",
+      "source_episode": "episode_000002",
+      "start_step": 747,
+      "core_start_step": 777,
+      "core_end_step": 805,
+      "end_step": 835,
+      "length": 88,
+      "target_severity": "collision",
+      "cube_index": 1,
+      "attempt_index": 2,
+      "task_phase": "approach_cube",
+      "task_phase_index": 0,
+      "controller_event": 1,
+      "phase_anchor_step": 791,
+      "trigger_task_phase": "approach_cube",
+      "trigger_controller_event": 0,
+      "source_anchor_step": 747,
+      "source_anchor_ee_pos": [
+        0.5000870823860168,
+        0.05965826287865639,
+        1.2622578144073486
+      ],
+      "recorded_min_surface_gap_m": -0.023746581748127937,
+      "recorded_contact": true,
+      "recorded_closest_link_id": 6,
+      "recorded_closest_hand_id": 2,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000002",
+        "active_cube_index": 1,
+        "active_cube_name": "cube_1",
+        "collection_seed": 4163879423090644135,
+        "layout_seed": 7652094024922882432,
+        "layout_id": "921e4ca8e66cda5a",
+        "measured_layout_id": "921e4ca8e66cda5a",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3481944501399994,
+            0.14012160897254944,
+            0.9757500290870667
+          ],
+          [
+            0.5034030079841614,
+            0.1387435346841812,
+            0.9757500290870667
+          ],
+          [
+            0.46432143449783325,
+            -0.03321903198957443,
+            0.9757500290870667
+          ],
+          [
+            0.6322780847549438,
+            0.06579312682151794,
+            0.9757500290870667
+          ],
+          [
+            0.4615742862224579,
+            -0.2191157341003418,
+            0.9757500290870667
+          ],
+          [
+            0.3021973967552185,
+            -0.0567963607609272,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.01200008112937212,
+          -0.5699905753135681,
+          -1.9922437033415008e-08,
+          -2.8100028038024902,
+          -1.68217286500294e-06,
+          3.036999464035034,
+          0.7410019636154175,
+          0.03999999165534973,
+          0.03999999165534973
+        ],
+        "robot_initial_joint_velocities": [
+          -9.685367331258021e-06,
+          -0.0009661110816523433,
+          1.6135901432789979e-06,
+          0.00041064328979700804,
+          0.00016952799342107028,
+          9.612456778995693e-06,
+          -0.0001846130908234045,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 747,
+        "source_anchor_ee_pos": [
+          0.5000870823860168,
+          0.05965826287865639,
+          1.2622578144073486
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          -0.004499492235481739,
+          0.9999619722366333,
+          0.007367521524429321,
+          -0.0012186795938760042
+        ],
+        "source_anchor_robot_joint_positions": [
+          -0.0399918407201767,
+          -0.06347022205591202,
+          0.07696326076984406,
+          -2.310619354248047,
+          0.017850445583462715,
+          2.245087146759033,
+          0.7963138818740845,
+          0.039999525994062424,
+          0.039999525994062424
+        ],
+        "source_anchor_robot_joint_velocities": [
+          0.33429738879203796,
+          -0.3028450906276703,
+          0.19964468479156494,
+          -0.38955166935920715,
+          0.005759181454777718,
+          0.10330187529325485,
+          0.5058010816574097,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 747,
+      "risk_window_end_step": 835,
+      "human_motion_start_step": 747,
+      "human_motion_end_step": 820,
+      "human_motion_length": 73,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 747,
+        "end_step_exclusive": 820,
+        "length": 73,
+        "risk_window_start_step": 747,
+        "risk_window_end_step_exclusive": 835,
+        "risk_core_start_step": 777,
+        "risk_core_end_step_exclusive": 805,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 762,
+            "end_step_exclusive": 777,
+            "head_relative_position_m": [
+              -0.4701554775238037,
+              0.07513381540775299,
+              -0.4136122465133667
+            ],
+            "maximum_speed_mps": 0.24260628960461564
+          },
+          "right": {
+            "start_step": 739,
+            "end_step_exclusive": 747,
+            "head_relative_position_m": [
+              -0.4305386543273926,
+              0.29958394542336464,
+              -0.3976086974143982
+            ],
+            "maximum_speed_mps": 0.04818749391963458
+          }
+        },
+        "recovery_search_start_step": 805,
+        "recovery_hold_start_step": 812,
+        "recovery_confirmation_step": 819,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.06049350324552314,
+          "right": 0.06354736789190776
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.05193724253444492,
+          "right": 0.04709989740801282
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 4.858274235972203,
+        "maximum_hand_step_displacement_m": 0.04616846538646581,
+        "maximum_head_hand_distance_m": 0.7862120101475044,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    },
+    {
+      "id": "4d0e6973c1d6134a",
+      "source_path": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/production_v5_p01_sessions17_24_training_ready_v1/hri_p01_sessions17-24_training_ready_v1/hdf5/hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_161720_522444864_2596652_hri_training_ready_v1.hdf5",
+      "session_id": "hri_vr_sphere_surface_twist_v8_dualclock_tracked_grasp_gate_v5_20260806_161720_522444864_2596652_hri_training_ready_v1",
+      "episode_name": "episode_000002",
+      "source_episode": "episode_000002",
+      "start_step": 1374,
+      "core_start_step": 1374,
+      "core_end_step": 1424,
+      "end_step": 1454,
+      "length": 80,
+      "target_severity": "gate_only",
+      "cube_index": 2,
+      "attempt_index": 3,
+      "task_phase": "approach_cube",
+      "task_phase_index": 0,
+      "controller_event": 0,
+      "phase_anchor_step": 1382,
+      "trigger_task_phase": "approach_cube",
+      "trigger_controller_event": 0,
+      "source_anchor_step": 1374,
+      "source_anchor_ee_pos": [
+        0.5996588468551636,
+        -0.20482739806175232,
+        1.1822096109390259
+      ],
+      "recorded_min_surface_gap_m": 0.077880859375,
+      "recorded_contact": false,
+      "recorded_closest_link_id": 5,
+      "recorded_closest_hand_id": 1,
+      "source_training_valid_mask_applied": true,
+      "source_configuration": {
+        "schema_version": "hri_source_configuration_v1",
+        "episode_name": "episode_000002",
+        "active_cube_index": 2,
+        "active_cube_name": "cube_2",
+        "collection_seed": 4163879423090644135,
+        "layout_seed": 7652094024922882432,
+        "layout_id": "921e4ca8e66cda5a",
+        "measured_layout_id": "921e4ca8e66cda5a",
+        "cube_names": [
+          "cube_0",
+          "cube_1",
+          "cube_2",
+          "cube_3",
+          "cube_4",
+          "cube_5"
+        ],
+        "cube_roles": [
+          "pick_target",
+          "pick_target",
+          "pick_target",
+          "distractor",
+          "distractor",
+          "distractor"
+        ],
+        "cube_positions_world": [
+          [
+            0.3481944501399994,
+            0.14012160897254944,
+            0.9757500290870667
+          ],
+          [
+            0.5034030079841614,
+            0.1387435346841812,
+            0.9757500290870667
+          ],
+          [
+            0.46432143449783325,
+            -0.03321903198957443,
+            0.9757500290870667
+          ],
+          [
+            0.6322780847549438,
+            0.06579312682151794,
+            0.9757500290870667
+          ],
+          [
+            0.4615742862224579,
+            -0.2191157341003418,
+            0.9757500290870667
+          ],
+          [
+            0.3021973967552185,
+            -0.0567963607609272,
+            0.9757500290870667
+          ]
+        ],
+        "cube_orientations_wxyz": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "place_target_position_world": [
+          0.6000000238418579,
+          -0.25,
+          0.9757500290870667
+        ],
+        "place_target_orientation_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "robot_initial_joint_positions": [
+          0.01200008112937212,
+          -0.5699905753135681,
+          -1.9922437033415008e-08,
+          -2.8100028038024902,
+          -1.68217286500294e-06,
+          3.036999464035034,
+          0.7410019636154175,
+          0.03999999165534973,
+          0.03999999165534973
+        ],
+        "robot_initial_joint_velocities": [
+          -9.685367331258021e-06,
+          -0.0009661110816523433,
+          1.6135901432789979e-06,
+          0.00041064328979700804,
+          0.00016952799342107028,
+          9.612456778995693e-06,
+          -0.0001846130908234045,
+          0.0,
+          0.0
+        ],
+        "source_anchor_step": 1374,
+        "source_anchor_ee_pos": [
+          0.5996588468551636,
+          -0.20482739806175232,
+          1.1822096109390259
+        ],
+        "source_anchor_ee_quat_wxyz": [
+          0.0001261959841940552,
+          1.0,
+          -6.511807441711426e-05,
+          0.00022405627532862127
+        ],
+        "source_anchor_robot_joint_positions": [
+          -0.3280371427536011,
+          0.4534758925437927,
+          -0.0658043771982193,
+          -1.8159226179122925,
+          0.037523701786994934,
+          2.268709659576416,
+          0.37421587109565735,
+          0.03999997675418854,
+          0.03999997675418854
+        ],
+        "source_anchor_robot_joint_velocities": [
+          0.006104957778006792,
+          -0.06176988035440445,
+          -0.00833760667592287,
+          0.026470528915524483,
+          -0.003238067729398608,
+          -0.08520481735467911,
+          0.00218533375300467,
+          0.0,
+          0.0
+        ],
+        "exact_pose_available": true,
+        "collection_seed_available": true,
+        "missing_fields": [],
+        "provenance": {
+          "initial_scene/cube_names": "initial_scene/cube_names",
+          "initial_scene/cube_roles": "initial_scene/cube_roles",
+          "initial_scene/cube_positions_world": "initial_scene/cube_positions_world",
+          "initial_scene/cube_orientations_wxyz": "initial_scene/cube_orientations_wxyz",
+          "initial_scene/place_target_position_world": "initial_scene/place_target_position_world",
+          "initial_scene/place_target_orientation_wxyz": "initial_scene/place_target_orientation_wxyz",
+          "initial_scene/robot_joint_positions": "obs/robot_joint_pos[0]",
+          "initial_scene/robot_joint_velocities": "obs/robot_joint_vel[0]",
+          "initial_scene/session_seed": "initial_scene/session_seed",
+          "initial_scene/layout_seed": "initial_scene/layout_seed",
+          "initial_scene/layout_id": "initial_scene/layout_id",
+          "initial_scene/measured_layout_id": "initial_scene/measured_layout_id"
+        }
+      },
+      "risk_window_start_step": 1374,
+      "risk_window_end_step": 1454,
+      "human_motion_start_step": 1374,
+      "human_motion_end_step": 1434,
+      "human_motion_length": 60,
+      "human_motion_collection_eligible": true,
+      "human_motion_window": {
+        "schema_version": "hri_human_motion_window_v1",
+        "start_step": 1374,
+        "end_step_exclusive": 1434,
+        "length": 60,
+        "risk_window_start_step": 1374,
+        "risk_window_end_step_exclusive": 1454,
+        "risk_core_start_step": 1374,
+        "risk_core_end_step_exclusive": 1424,
+        "time_source": "pose_monotonic_time_ns",
+        "active_hand_ids": [
+          1,
+          2
+        ],
+        "active_hand_names": [
+          "left",
+          "right"
+        ],
+        "reference_frame": "head_translation_relative",
+        "references": {
+          "left": {
+            "start_step": 1366,
+            "end_step_exclusive": 1374,
+            "head_relative_position_m": [
+              -0.46681785583496094,
+              -0.09868399798870087,
+              -0.4237603545188904
+            ],
+            "maximum_speed_mps": 0.14295605503160155
+          },
+          "right": {
+            "start_step": 1366,
+            "end_step_exclusive": 1374,
+            "head_relative_position_m": [
+              -0.48421528935432434,
+              0.13924030028283596,
+              -0.3192601799964905
+            ],
+            "maximum_speed_mps": 0.06088180434198454
+          }
+        },
+        "recovery_search_start_step": 1424,
+        "recovery_hold_start_step": 1424,
+        "recovery_confirmation_step": 1433,
+        "recovery_complete": true,
+        "recovery_status": "head_relative_return_confirmed",
+        "recovery_endpoint_distance_m": {
+          "left": 0.10545743660779239,
+          "right": 0.09892726290737541
+        },
+        "recovery_endpoint_speed_mps": {
+          "left": 0.03862177217084868,
+          "right": 0.012777957827544591
+        },
+        "collection_eligible": true
+      },
+      "bc_cbf_clean_source_audit": {
+        "contract": "bc_cbf_source_motion_quality_selection_v1",
+        "time_source": "pose_monotonic_time_ns",
+        "duration_s": 3.5426439959555864,
+        "maximum_hand_step_displacement_m": 0.017868546749690222,
+        "maximum_head_hand_distance_m": 0.6973298288131675,
+        "maximum_below_table_duration_s": 0.0,
+        "all_training_tracking_geometry_valid": true,
+        "exact_source_scene_available": true
+      }
+    }
+  ],
+  "base_manifest_schema_version": "hri_encounter_manifest_v2",
+  "human_motion_window_contract": "hri_human_motion_window_v1",
+  "human_motion_window_interval_convention": "start_inclusive_end_exclusive",
+  "human_motion_window_policy": "shared_head_and_both_hands_active_hand_body_relative_recovery",
+  "human_motion_recovery_config": {
+    "reference_lookback_s": 0.5,
+    "reference_hold_s": 0.3,
+    "reference_max_speed_mps": 0.25,
+    "recovery_radius_m": 0.15,
+    "recovery_max_speed_mps": 0.1,
+    "recovery_hold_s": 0.5,
+    "maximum_recovery_s": 6.0,
+    "clear_gap_m": 0.15,
+    "next_risk_gap_m": 0.13,
+    "next_risk_onset_s": 0.1,
+    "max_sample_gap_s": 0.25,
+    "minimum_reference_samples": 3,
+    "active_hand_policy": "both",
+    "require_all_tracks_valid": true
+  },
+  "human_motion_parent_manifest": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/manifests/p01_v8_22sessions_cv4/fold_01_eval.json",
+  "human_motion_parent_manifest_sha256": "53fda6cf013535b7eeac941badab04f0c657c40238d3ef3e1b9ef7ea631a929a",
+  "human_motion_annotated_at_utc": "2026-09-02T11:43:38.352245+00:00",
+  "human_motion_drop_incomplete_recovery": true,
+  "human_motion_input_scenario_count": 17,
+  "human_motion_recovery_status_counts": {
+    "head_relative_return_confirmed": 17
+  },
+  "human_motion_source_input_scenario_count": 203,
+  "bc_cbf_clean_selection": {
+    "contract": "bc_cbf_source_motion_quality_selection_v1",
+    "name": "fold01_session_heldout_clean17",
+    "source_manifest": "/home/railabchan/isaac_vr_project/v3_chan/trajectories/manifests/p01_v8_22sessions_cv4/fold_01_eval.json",
+    "source_manifest_sha256": "53fda6cf013535b7eeac941badab04f0c657c40238d3ef3e1b9ef7ea631a929a",
+    "source_only_quality_selection": true,
+    "policy_outcomes_used_for_this_selection": false,
+    "target_severity_is_metadata_only": true,
+    "world_anchor_required": true,
+    "maximum_hand_step_displacement_m": 0.15,
+    "maximum_head_hand_distance_m": 1.25,
+    "maximum_sample_gap_s": 0.25,
+    "maximum_clip_duration_s": 12.0,
+    "below_table_screen": {
+      "table_x_bounds_m": [
+        -0.2,
+        1.0
+      ],
+      "table_y_bounds_m": [
+        -0.4,
+        0.4
+      ],
+      "table_underside_z_m": 0.9,
+      "maximum_duration_s": 0.5,
+      "interpretation": "conservative_source_quality_gate"
+    },
+    "selected_scenario_ids": [
+      "50448016792889fc",
+      "e4dec154890c9930",
+      "27630e46ae47b2a8",
+      "b27abf0c36b142e4",
+      "411499cb0412a934",
+      "cb32741689b89da6",
+      "5702235ad299ed14",
+      "cc2f20dab45c440c",
+      "13479fc807f857ab",
+      "d8c74b23e568535b",
+      "5f094b483b9220f1",
+      "5903aea975180b21",
+      "431ce01bc54d5291",
+      "99da66b98c374c0d",
+      "446476958c725aa2",
+      "f54e95496c71b485",
+      "4d0e6973c1d6134a"
+    ]
+  }
+}

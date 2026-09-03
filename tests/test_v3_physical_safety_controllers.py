@@ -851,3 +851,479 @@ def test_cbf_fail_closes_with_stop_when_active_constraints_are_infeasible():
     assert diagnostics.status == "fallback_stop_infeasible"
     assert diagnostics.relaxed_solution_available
     assert not diagnostics.relaxed_solution_applied
+
+
+@pytest.mark.parametrize(
+    ("config", "expected_message"),
+    (
+        (CBFConfig(objective_mode="unknown"), "objective_mode"),
+        (CBFConfig(task_space_weight=0.0), "task_space_weight"),
+        (
+            CBFConfig(joint_regularization_epsilon=0.0),
+            "joint_regularization_epsilon",
+        ),
+        (
+            CBFConfig(correction_smoothness_weight=-1.0),
+            "correction_smoothness_weight",
+        ),
+    ),
+)
+def test_cbf_objective_configuration_validation(config, expected_message):
+    with pytest.raises(ValueError, match=expected_message):
+        config.validated()
+
+
+def test_joint_nominal_objective_remains_the_default_and_ignores_new_weights():
+    default_action = SimpleNamespace(
+        joint_indices=np.array([0]),
+        joint_positions=np.array([-0.01]),
+        joint_velocities=None,
+    )
+    explicit_action = SimpleNamespace(
+        joint_indices=np.array([0]),
+        joint_positions=np.array([-0.01]),
+        joint_velocities=None,
+    )
+    default_filtered, default_diagnostics = _filter_close_left_hand(
+        arm_action=default_action,
+        cbf=DistalLinkVelocityCBF(CBFConfig()),
+    )
+    explicit_filtered, explicit_diagnostics = _filter_close_left_hand(
+        arm_action=explicit_action,
+        cbf=DistalLinkVelocityCBF(
+            CBFConfig(
+                objective_mode="joint_nominal",
+                task_space_weight=123.0,
+                joint_regularization_epsilon=1e-4,
+                correction_smoothness_weight=77.0,
+            )
+        ),
+    )
+
+    assert CBFConfig().objective_mode == "joint_nominal"
+    np.testing.assert_array_equal(
+        explicit_filtered.joint_positions, default_filtered.joint_positions
+    )
+    np.testing.assert_array_equal(
+        explicit_filtered.joint_velocities, default_filtered.joint_velocities
+    )
+    assert explicit_diagnostics.objective_mode == "joint_nominal"
+    assert (
+        explicit_diagnostics.max_constraint_violation_after
+        == default_diagnostics.max_constraint_violation_after
+    )
+    assert (
+        explicit_diagnostics.intervention_norm_radps
+        == default_diagnostics.intervention_norm_radps
+    )
+
+
+class _TwoJointArticulationView:
+    body_names = ("panda_link0", "panda_hand")
+
+    def get_jacobians(self):
+        # The safety normal is +X, so the barrier row is [1, 1].  The large
+        # second-joint Y component makes preserving task-space motion prefer
+        # correcting joint 1, unlike the Euclidean joint-space projection.
+        jacobian = np.zeros((1, 1, 6, 2), dtype=float)
+        jacobian[0, 0, 0] = np.array([1.0, 1.0])
+        jacobian[0, 0, 1] = np.array([0.0, 10.0])
+        return jacobian
+
+
+class _TwoJointRobot:
+    def __init__(self):
+        self._articulation_view = _TwoJointArticulationView()
+        self.dof_properties = {
+            "maxVelocity": np.full(2, 2.0),
+            "lower": np.full(2, -3.0),
+            "upper": np.full(2, 3.0),
+        }
+
+    def get_joint_positions(self):
+        return np.zeros(2)
+
+
+def _filter_two_joint_close_hand(objective_mode):
+    cbf = DistalLinkVelocityCBF(
+        CBFConfig(
+            objective_mode=objective_mode,
+            prediction_horizon_s=0.0,
+            task_space_weight=1.0,
+            joint_regularization_epsilon=0.01,
+        )
+    )
+    action = SimpleNamespace(
+        joint_indices=np.array([0, 1]),
+        joint_positions=None,
+        joint_velocities=np.array([-0.2, 0.0]),
+    )
+    safety_result = EndEffectorSafetyResult(
+        left=HandSafetyResult(
+            hand="left",
+            geometry_valid=True,
+            surface_gap_m=0.02,
+            closest_link="panda_hand",
+            closest_surface_point_world_pos=(0.0, 0.0, 0.0),
+            closest_surface_point_valid=True,
+        ),
+        right=HandSafetyResult(hand="right", geometry_valid=False),
+    )
+    return cbf.filter_action(
+        robot=_TwoJointRobot(),
+        arm_action=action,
+        safety_result=safety_result,
+        dynamic_sample=SimpleNamespace(
+            left=_dynamic_hand(),
+            right=_dynamic_hand(),
+        ),
+        safety_geometry=_FakeSafetyGeometry(),
+        observation={
+            "human_left_hand_pos": np.array([-0.10, 0.0, 0.0]),
+            "human_right_hand_pos": np.zeros(3),
+        },
+        physics_dt_s=0.1,
+    )
+
+
+def test_task_consistent_objective_can_differ_while_preserving_safe_set():
+    joint_filtered, joint_diagnostics = _filter_two_joint_close_hand(
+        "joint_nominal"
+    )
+    task_filtered, task_diagnostics = _filter_two_joint_close_hand(
+        "task_consistent"
+    )
+
+    # Both variants enforce the unchanged barrier qdot_0 + qdot_1 >= 0.24.
+    assert np.sum(joint_filtered.joint_velocities) >= 0.24 - 1e-5
+    assert np.sum(task_filtered.joint_velocities) >= 0.24 - 1e-5
+    assert joint_diagnostics.max_constraint_violation_after <= 1e-5
+    assert task_diagnostics.max_constraint_violation_after <= 1e-5
+    assert joint_diagnostics.feasible and task_diagnostics.feasible
+
+    # A splits the Euclidean correction across the joints.  B avoids the
+    # high task-space cost caused by joint 1's large Y Jacobian component.
+    assert not np.allclose(
+        task_filtered.joint_velocities,
+        joint_filtered.joint_velocities,
+        atol=1e-3,
+    )
+    assert abs(task_filtered.joint_velocities[1]) < abs(
+        joint_filtered.joint_velocities[1]
+    )
+    assert task_diagnostics.objective_mode == "task_consistent"
+    assert task_diagnostics.objective_solver_fallback is False
+    assert task_diagnostics.solver_backend == "scipy_slsqp_task_consistent"
+    assert len(task_diagnostics.task_velocity_nominal) == 4
+    assert len(task_diagnostics.task_velocity_filtered) == 4
+
+
+class _PhaseProgressArticulationView:
+    body_names = ("panda_link0", "panda_hand")
+
+    def get_jacobians(self):
+        jacobian = np.zeros((1, 1, 6, 2), dtype=float)
+        jacobian[0, 0, 0] = np.array([1.0, 1.0])
+        jacobian[0, 0, 1] = np.array([0.0, -1.0])
+        jacobian[0, 0, 2] = np.array([-1.0, 0.0])
+        return jacobian
+
+
+class _PhaseProgressRobot:
+    def __init__(self):
+        self._articulation_view = _PhaseProgressArticulationView()
+        self.dof_properties = {
+            "maxVelocity": np.full(2, 2.0),
+            "lower": np.full(2, -3.0),
+            "upper": np.full(2, 3.0),
+        }
+
+    def get_joint_positions(self):
+        return np.zeros(2)
+
+
+def _filter_phase_progress(
+    *,
+    event=5,
+    attached=True,
+    p_threshold=0.01,
+    recovery=False,
+    recovery_stage="inactive",
+    place_spatially_ready=False,
+    target_position_world_m=np.array([0.3, 1.0, 0.5]),
+):
+    cbf = DistalLinkVelocityCBF(
+        CBFConfig(
+            objective_mode="phase_progress",
+            prediction_horizon_s=0.0,
+            progress_retention_rho=0.9,
+            progress_penalty_weight=200.0,
+            progress_nominal_threshold_mps=p_threshold,
+        )
+    )
+    action = SimpleNamespace(
+        joint_indices=np.array([0, 1]),
+        joint_positions=None,
+        joint_velocities=np.array([-0.2, -0.1]),
+    )
+    safety_result = EndEffectorSafetyResult(
+        left=HandSafetyResult(
+            hand="left",
+            geometry_valid=True,
+            surface_gap_m=0.02,
+            closest_link="panda_hand",
+            closest_surface_point_world_pos=(0.0, 0.0, 0.0),
+            closest_surface_point_valid=True,
+        ),
+        right=HandSafetyResult(hand="right", geometry_valid=False),
+    )
+    return cbf.filter_action(
+        robot=_PhaseProgressRobot(),
+        arm_action=action,
+        safety_result=safety_result,
+        dynamic_sample=SimpleNamespace(
+            left=_dynamic_hand(),
+            right=_dynamic_hand(),
+        ),
+        safety_geometry=_FakeSafetyGeometry(),
+        observation={
+            "human_left_hand_pos": np.array([-0.10, 0.0, 0.0]),
+            "human_right_hand_pos": np.zeros(3),
+            "ee_pos": np.array([0.3, 0.0, 0.5]),
+            "ee_to_cube": np.array([0.0, 1.0, 0.0]),
+            "cube_to_place_target": np.array([0.0, 1.0, 0.0]),
+            "has_grasped_cube": np.array([float(attached)]),
+        },
+        task_progress_context={
+            "controller_event": event,
+            "controller_t": 0.5,
+            "target_position_world_m": target_position_world_m,
+            "recovery_control_active": recovery,
+            "recovery_stage": recovery_stage,
+            "place_spatially_ready": place_spatially_ready,
+        },
+        physics_dt_s=0.1,
+    )
+
+
+def test_phase_progress_improves_retained_progress_without_changing_safe_set():
+    filtered, diagnostics = _filter_phase_progress()
+
+    assert np.sum(filtered.joint_velocities) >= 0.24 - 1e-5
+    assert diagnostics.max_constraint_violation_after <= 1e-5
+    assert diagnostics.task_progress_active
+    assert diagnostics.task_progress_phase == "transport"
+    assert diagnostics.task_progress_source == (
+        "attached_cube_goal_ee_jacobian_proxy"
+    )
+    assert diagnostics.task_progress_A_mps < 0.0
+    assert diagnostics.task_progress_filtered_mps > 0.08
+    assert diagnostics.task_progress_filtered_mps <= (
+        diagnostics.task_progress_nominal_mps + 1e-5
+    )
+    assert diagnostics.task_progress_shortfall_mps < (
+        diagnostics.task_progress_A_shortfall_mps
+    )
+    assert diagnostics.solver_backend == "scipy_slsqp_phase_progress"
+
+
+@pytest.mark.parametrize("event", [2, 3, 7, 8])
+def test_phase_progress_uses_A_for_settle_grasp_and_release_events(event):
+    filtered, diagnostics = _filter_phase_progress(event=event)
+
+    np.testing.assert_allclose(filtered.joint_velocities, [0.07, 0.17], atol=1e-4)
+    assert not diagnostics.task_progress_active
+    assert diagnostics.solver_backend != "scipy_slsqp_phase_progress"
+
+
+@pytest.mark.parametrize("event", [0, 1])
+def test_phase_progress_enables_both_reach_events(event):
+    _, diagnostics = _filter_phase_progress(event=event, attached=False)
+
+    assert diagnostics.task_progress_active
+    assert diagnostics.task_progress_phase == "approach"
+
+
+def test_phase_progress_disables_transport_without_attachment():
+    filtered, diagnostics = _filter_phase_progress(event=5, attached=False)
+
+    np.testing.assert_allclose(filtered.joint_velocities, [0.07, 0.17], atol=1e-4)
+    assert not diagnostics.task_progress_active
+    assert diagnostics.task_progress_gate_reason == (
+        "transport_without_attachment_uses_A_objective"
+    )
+
+
+def test_phase_progress_uses_actual_lift_target_only_when_attached():
+    _, attached = _filter_phase_progress(event=4, attached=True)
+    _, unattached = _filter_phase_progress(event=4, attached=False)
+
+    assert attached.task_progress_active
+    assert attached.task_progress_phase == "lift"
+    assert attached.task_progress_source == "controller_target_direction"
+    assert not unattached.task_progress_active
+    assert unattached.task_progress_gate_reason == (
+        "lift_without_attachment_uses_A_objective"
+    )
+
+
+@pytest.mark.parametrize(
+    "target, expected_source",
+    [
+        (None, "world_up_fallback_missing_lift_target"),
+        (
+            np.array([0.3, 0.0, 0.5]),
+            "world_up_fallback_degenerate_lift_target",
+        ),
+    ],
+)
+def test_phase_progress_lift_uses_world_up_only_as_target_fallback(
+    target, expected_source
+):
+    _, diagnostics = _filter_phase_progress(
+        event=4,
+        attached=True,
+        target_position_world_m=target,
+    )
+
+    assert diagnostics.task_progress_active
+    assert diagnostics.task_progress_source == expected_source
+    assert diagnostics.task_progress_direction_world == (0.0, 0.0, 1.0)
+
+
+def test_phase_progress_disables_place_penalty_after_spatial_readiness():
+    filtered, diagnostics = _filter_phase_progress(
+        event=6, attached=True, place_spatially_ready=True
+    )
+
+    np.testing.assert_allclose(filtered.joint_velocities, [0.07, 0.17], atol=1e-4)
+    assert not diagnostics.task_progress_active
+    assert diagnostics.task_progress_gate_reason == (
+        "place_spatially_ready_uses_A_objective"
+    )
+
+
+def test_phase_progress_recovery_stage_takes_precedence_over_aliased_event():
+    _, diagnostics = _filter_phase_progress(
+        event=6,
+        attached=True,
+        recovery=True,
+        recovery_stage="place_lift",
+        place_spatially_ready=True,
+    )
+
+    assert diagnostics.task_progress_active
+    assert diagnostics.task_progress_phase == "recovery:place_lift"
+    assert diagnostics.task_progress_source == "fixed_recovery_target_direction"
+
+
+def test_phase_progress_small_nominal_gate_recovers_exact_A_solution():
+    filtered, diagnostics = _filter_phase_progress(p_threshold=0.2)
+
+    np.testing.assert_allclose(filtered.joint_velocities, [0.07, 0.17], atol=1e-4)
+    assert not diagnostics.task_progress_active
+    assert diagnostics.task_progress_gate_reason == (
+        "nominal_progress_below_threshold"
+    )
+
+
+def _far_hand_safety_result():
+    return EndEffectorSafetyResult(
+        left=HandSafetyResult(
+            hand="left",
+            geometry_valid=True,
+            surface_gap_m=0.20,
+            closest_link="panda_hand",
+            closest_surface_point_world_pos=(0.0, 0.0, 0.0),
+            closest_surface_point_valid=True,
+        ),
+        right=HandSafetyResult(hand="right", geometry_valid=False),
+    )
+
+
+def _filter_one_joint_with_safety_result(cbf, safety_result, nominal=-0.1):
+    action = SimpleNamespace(
+        joint_indices=np.array([0]),
+        joint_positions=None,
+        joint_velocities=np.array([nominal], dtype=float),
+    )
+    return cbf.filter_action(
+        robot=_FakeRobot(),
+        arm_action=action,
+        safety_result=safety_result,
+        dynamic_sample=SimpleNamespace(
+            left=_dynamic_hand(),
+            right=_dynamic_hand(),
+        ),
+        safety_geometry=_FakeSafetyGeometry(),
+        observation={
+            "human_left_hand_pos": np.array([-0.10, 0.0, 0.0]),
+            "human_right_hand_pos": np.zeros(3),
+        },
+        physics_dt_s=0.1,
+    )
+
+
+def test_smooth_intervention_memory_requires_commit_and_reset_clears_it():
+    cbf = DistalLinkVelocityCBF(
+        CBFConfig(
+            objective_mode="smooth_intervention",
+            correction_smoothness_weight=1.0,
+            prediction_horizon_s=0.0,
+        )
+    )
+    close_hand = EndEffectorSafetyResult(
+        left=HandSafetyResult(
+            hand="left",
+            geometry_valid=True,
+            surface_gap_m=0.02,
+            closest_link="panda_hand",
+            closest_surface_point_world_pos=(0.0, 0.0, 0.0),
+            closest_surface_point_valid=True,
+        ),
+        right=HandSafetyResult(hand="right", geometry_valid=False),
+    )
+
+    _, uncommitted = _filter_one_joint_with_safety_result(cbf, close_hand)
+    assert uncommitted.correction_radps[0] == pytest.approx(0.34, abs=1e-5)
+    cbf.notify_action_committed(False)
+    uncommitted_tail_action, uncommitted_tail = (
+        _filter_one_joint_with_safety_result(cbf, _far_hand_safety_result())
+    )
+    np.testing.assert_array_equal(uncommitted_tail_action.joint_velocities, [-0.1])
+    assert uncommitted_tail.status == "inactive"
+    assert uncommitted_tail.intervention_norm_radps == 0.0
+
+    _, committed = _filter_one_joint_with_safety_result(cbf, close_hand)
+    cbf.notify_action_committed(True)
+    tail_action, tail = _filter_one_joint_with_safety_result(
+        cbf, _far_hand_safety_result()
+    )
+    previous = committed.correction_radps[0]
+    expected_tail_correction = 0.5 * previous
+    assert tail.status == "smooth_intervention_tail"
+    assert tail.previous_correction_radps[0] == pytest.approx(previous, abs=1e-5)
+    assert tail.correction_radps[0] == pytest.approx(
+        expected_tail_correction, abs=1e-5
+    )
+    assert tail_action.joint_velocities[0] == pytest.approx(
+        -0.1 + expected_tail_correction, abs=1e-5
+    )
+    assert abs(tail.correction_radps[0]) < abs(previous)
+
+    cbf.reset()
+    after_reset_action, after_reset = _filter_one_joint_with_safety_result(
+        cbf, _far_hand_safety_result()
+    )
+    np.testing.assert_array_equal(after_reset_action.joint_velocities, [-0.1])
+    assert after_reset.status == "inactive"
+    assert after_reset.previous_correction_radps == (0.0,)
+    assert after_reset.intervention_norm_radps == 0.0
+
+
+def test_smooth_intervention_commit_marker_must_be_exact_boolean():
+    cbf = DistalLinkVelocityCBF(
+        CBFConfig(objective_mode="smooth_intervention")
+    )
+    with pytest.raises(ValueError, match="must be an exact boolean"):
+        cbf.notify_action_committed(1)

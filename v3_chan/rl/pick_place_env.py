@@ -38,6 +38,13 @@ from .strict_task_semantics import (
     StrictTaskSemanticsController,
     TaskPhysicalEvidence,
 )
+from .state_aware_recovery import (
+    STATE_AWARE_RECOVERY_SCHEMA,
+    StateAwareRecoveryBridge,
+    StateAwareRecoveryConfig,
+    StateAwareRecoveryDecision,
+    StateAwareRecoveryEvidence,
+)
 from .rewards import (
     DEFAULT_ISAAC_FRANKA_DENSE_REWARD_WEIGHTS,
     DEFAULT_MINIMAL_REWARD_WEIGHTS,
@@ -100,6 +107,7 @@ EXACT_POSE_ROBOT_RESET_CONTRACT = (
     "exact_pose_full_dof_q_qd_applied_targets_from_restored_measured_state_"
     "zero_tolerance_v1"
 )
+PICK_PLACE_BRANCH_STATE_SCHEMA = "pick_place_branch_state_v2"
 
 
 GripperMode = Literal["event", "rule", "policy"]
@@ -135,6 +143,19 @@ class PickPlaceBranchState:
     human_replay_state: dict[str, Any] | None
     safety_geometry_state: dict[str, Any]
     last_physical_safety_diagnostics: Any
+    strict_task_semantics_enabled: bool
+    strict_task_semantics_config: dict[str, Any]
+    strict_task_semantics_state: dict[str, Any]
+    last_strict_task_decision: StrictTaskPhaseDecision | None
+    state_aware_recovery_enabled: bool
+    state_aware_recovery_config: dict[str, Any]
+    state_aware_recovery_state: dict[str, Any]
+    last_recovery_decision: StateAwareRecoveryDecision | None
+    pending_recovery_handoff: StateAwareRecoveryDecision | None
+    recovery_control_applied: bool
+    recovery_handoff_accepted: bool
+    last_recovery_alignment_token: tuple[int, int, str] | None
+    last_gripper_command: str | None
     world_time: float
 
 
@@ -161,6 +182,7 @@ class PickPlaceEnvConfig:
     synchronize_advanced_phase_observation: bool = False
     strict_task_semantics: bool = False
     strict_place_xy_tolerance_m: float = 0.04
+    state_aware_recovery: bool = False
     observation_mode: ObservationMode = "flat"
     seed: int = 11
     render: bool = False
@@ -196,6 +218,14 @@ class PickPlaceEnvConfig:
     cbf_prediction_horizon_s: float = 0.15
     cbf_max_prediction_buffer_m: float = 0.08
     cbf_max_joint_speed_rad_s: float = 2.0
+    cbf_objective_mode: str = "joint_nominal"
+    cbf_task_space_weight: float = 1.0
+    cbf_task_yaw_length_scale_m_per_rad: float = 0.10
+    cbf_joint_regularization_epsilon: float = 0.05
+    cbf_correction_smoothness_weight: float = 1.0
+    cbf_progress_retention_rho: float = 0.70
+    cbf_progress_penalty_weight: float = 50.0
+    cbf_progress_nominal_threshold_mps: float = 0.01
     extended_backup_safety_geometry: bool = False
 
 
@@ -233,6 +263,12 @@ class IsaacPickPlaceEnv:
             raise ValueError("rmpflow_human_safety_margin_m must be non-negative")
         if not isinstance(self.config.strict_task_semantics, bool):
             raise ValueError("strict_task_semantics must be boolean")
+        if not isinstance(self.config.state_aware_recovery, bool):
+            raise ValueError("state_aware_recovery must be boolean")
+        if self.config.state_aware_recovery and not self.config.strict_task_semantics:
+            raise ValueError(
+                "state-aware recovery requires strict task semantics"
+            )
         if self.config.strict_place_xy_tolerance_m <= 0.0:
             raise ValueError("strict_place_xy_tolerance_m must be positive")
         self.human_state_fn = human_state_fn
@@ -294,6 +330,26 @@ class IsaacPickPlaceEnv:
                     prediction_horizon_s=self.config.cbf_prediction_horizon_s,
                     max_prediction_buffer_m=self.config.cbf_max_prediction_buffer_m,
                     max_joint_speed_rad_s=self.config.cbf_max_joint_speed_rad_s,
+                    objective_mode=self.config.cbf_objective_mode,
+                    task_space_weight=self.config.cbf_task_space_weight,
+                    task_yaw_length_scale_m_per_rad=(
+                        self.config.cbf_task_yaw_length_scale_m_per_rad
+                    ),
+                    joint_regularization_epsilon=(
+                        self.config.cbf_joint_regularization_epsilon
+                    ),
+                    correction_smoothness_weight=(
+                        self.config.cbf_correction_smoothness_weight
+                    ),
+                    progress_retention_rho=(
+                        self.config.cbf_progress_retention_rho
+                    ),
+                    progress_penalty_weight=(
+                        self.config.cbf_progress_penalty_weight
+                    ),
+                    progress_nominal_threshold_mps=(
+                        self.config.cbf_progress_nominal_threshold_mps
+                    ),
                 )
             )
             if mode_uses_cbf(self._physical_safety_mode)
@@ -301,19 +357,32 @@ class IsaacPickPlaceEnv:
         )
         self._curobo_controller = None
         self._last_physical_safety_diagnostics = PhysicalSafetyDiagnostics(
-            controller=self._physical_safety_mode
+            controller=self._physical_safety_mode,
+            objective_mode=self.config.cbf_objective_mode,
         )
         self._strict_task_semantics_config = StrictTaskSemanticsConfig(
             enabled=bool(self.config.strict_task_semantics),
             place_xy_tolerance_m=float(
                 self.config.strict_place_xy_tolerance_m
             ),
+            state_aware_recovery=bool(self.config.state_aware_recovery),
         ).validated()
         self._strict_task_controller = StrictTaskSemanticsController(
             self._strict_task_semantics_config
         )
         self._last_strict_task_decision: StrictTaskPhaseDecision | None = None
         self._last_gripper_command: str | None = None
+        self._state_aware_recovery_config = StateAwareRecoveryConfig(
+            enabled=bool(self.config.state_aware_recovery)
+        ).validated()
+        self._state_aware_recovery = StateAwareRecoveryBridge(
+            self._state_aware_recovery_config
+        )
+        self._last_recovery_decision: StateAwareRecoveryDecision | None = None
+        self._pending_recovery_handoff: StateAwareRecoveryDecision | None = None
+        self._recovery_control_applied = False
+        self._recovery_handoff_accepted = False
+        self._last_recovery_alignment_token: tuple[int, int, str] | None = None
         self._rmpflow_human_obstacles: dict[str, Any] = {}
         self._rmpflow_obstacles_registered = False
         self._rmpflow_valid_hand_count = 0
@@ -333,6 +402,7 @@ class IsaacPickPlaceEnv:
         self._last_safety_result = None
         self._last_environment_safety_result = None
         self._last_dynamic_safety_sample = None
+        self._last_command_provenance: dict[str, Any] = {}
         self._source_restoration_diagnostics = _empty_source_restoration_diagnostics()
         self._synthetic_human_active = False
         self._synthetic_human_start_step = 0
@@ -421,7 +491,8 @@ class IsaacPickPlaceEnv:
         if self._curobo_controller is not None:
             self._curobo_controller.reset()
         self._last_physical_safety_diagnostics = PhysicalSafetyDiagnostics(
-            controller=self._physical_safety_mode
+            controller=self._physical_safety_mode,
+            objective_mode=self.config.cbf_objective_mode,
         )
         self.safety_geometry.reset_link_origin_pose_cache()
         if restoration_mode == "exact_pose":
@@ -506,6 +577,7 @@ class IsaacPickPlaceEnv:
         self.dynamic_safety.reset()
         self._last_dynamic_safety_sample = None
         self._last_environment_safety_result = None
+        self._last_command_provenance = {}
 
         obs = self._build_obs()
         self._reset_strict_task_semantics(obs)
@@ -533,8 +605,39 @@ class IsaacPickPlaceEnv:
             )
 
         action = _finite_action(action)
-        target_pos, target_quat, self.yaw = self._target_from_action(action)
-        gripper_command = self._gripper_command(action, self._last_obs)
+        pre_joint_positions = _safe_robot_joint_vector(
+            self.robot, "get_joint_positions"
+        )
+        pre_joint_velocities = _safe_robot_joint_vector(
+            self.robot, "get_joint_velocities"
+        )
+        self._recovery_handoff_accepted = False
+        recovery_decision = self._prepare_state_aware_recovery_control(
+            self._last_obs
+        )
+        self._last_recovery_decision = recovery_decision
+        self._pending_recovery_handoff = (
+            recovery_decision if recovery_decision.handoff else None
+        )
+        self._recovery_control_applied = bool(
+            recovery_decision.target_position_m is not None
+            or recovery_decision.timed_out
+        )
+        if recovery_decision.target_position_m is not None:
+            target_pos = np.asarray(
+                recovery_decision.target_position_m, dtype=float
+            ).reshape(3)
+            target_quat = self._fixed_target_orientation(self.yaw)
+            gripper_command = self._recovery_gripper_command(
+                recovery_decision.desired_gripper_closed
+            )
+        elif recovery_decision.timed_out:
+            target_pos = np.asarray(self._last_obs["ee_pos"], dtype=float).reshape(3)
+            target_quat = self._fixed_target_orientation(self.yaw)
+            gripper_command = None
+        else:
+            target_pos, target_quat, self.yaw = self._target_from_action(action)
+            gripper_command = self._gripper_command(action, self._last_obs)
         self._last_gripper_command = gripper_command
 
         if self._curobo_controller is not None:
@@ -551,6 +654,7 @@ class IsaacPickPlaceEnv:
             )
             self._last_physical_safety_diagnostics = PhysicalSafetyDiagnostics(
                 controller=self._physical_safety_mode,
+                objective_mode=self.config.cbf_objective_mode,
                 active=bool(
                     mode_uses_rmpflow_obstacles(self._physical_safety_mode)
                     and self._rmpflow_valid_hand_count > 0
@@ -578,6 +682,10 @@ class IsaacPickPlaceEnv:
                     safety_geometry=self.safety_geometry,
                     observation=self._last_obs,
                     physics_dt_s=self.physics_dt_s,
+                    task_progress_context=self._cbf_task_progress_context(
+                        target_pos=target_pos,
+                        recovery_decision=recovery_decision,
+                    ),
                     human_valid_mask=self._human_replay_aux_state.get(
                         "human_valid_mask"
                     ),
@@ -593,9 +701,42 @@ class IsaacPickPlaceEnv:
         )
         self._last_gripper_command = gripper_command
         control_action = self._merge_gripper_action(arm_action, gripper_command)
+        arm_command_committed = bool(gripper_command is None)
+        applied_action_payload = _articulation_action_payload(control_action)
         self.robot.apply_action(control_action)
+        if self._cbf_filter is not None:
+            self._cbf_filter.notify_action_committed(arm_command_committed)
+        if self._strict_task_semantics_enabled():
+            self._strict_task_controller.notify_gripper_command_applied(
+                event=int(self.phase_event),
+                command=gripper_command,
+                grasp_candidate_before_command=bool(
+                    float(
+                        np.asarray(
+                            self._last_obs["has_grasped_cube"], dtype=float
+                        ).reshape(-1)[0]
+                    )
+                    > 0.5
+                ),
+            )
         self.world.step(render=self.config.render)
         self.step_count += 1
+
+        self._last_command_provenance = {
+            "schema_version": "physical_command_provenance_v1",
+            "arm_command_committed": arm_command_committed,
+            "gripper_command": gripper_command,
+            "pre_joint_positions_rad": pre_joint_positions,
+            "pre_joint_velocities_radps": pre_joint_velocities,
+            "applied_action": applied_action_payload,
+            "post_joint_positions_rad": _safe_robot_joint_vector(
+                self.robot, "get_joint_positions"
+            ),
+            "post_joint_velocities_radps": _safe_robot_joint_vector(
+                self.robot, "get_joint_velocities"
+            ),
+            "physics_dt_s": float(self.physics_dt_s),
+        }
 
         next_obs = self._build_obs()
         phase_control = self._control_task_phase(
@@ -687,7 +828,7 @@ class IsaacPickPlaceEnv:
             raise RuntimeError("active_cube is not present in pick_targets")
         target_position, target_orientation = self.place_target.get_world_pose()
         return PickPlaceBranchState(
-            schema_version="pick_place_branch_state_v1",
+            schema_version=PICK_PLACE_BRANCH_STATE_SCHEMA,
             robot_joint_positions=_required_runtime_vector(
                 self.robot.get_joint_positions(), "robot_joint_positions"
             ),
@@ -732,6 +873,35 @@ class IsaacPickPlaceEnv:
             last_physical_safety_diagnostics=copy.deepcopy(
                 self._last_physical_safety_diagnostics
             ),
+            strict_task_semantics_enabled=self._strict_task_semantics_enabled(),
+            strict_task_semantics_config=copy.deepcopy(
+                self._strict_task_semantics_config.as_dict()
+            ),
+            strict_task_semantics_state=copy.deepcopy(
+                self._strict_task_controller.state.as_dict()
+            ),
+            last_strict_task_decision=copy.deepcopy(
+                self._last_strict_task_decision
+            ),
+            state_aware_recovery_enabled=self._state_aware_recovery_enabled(),
+            state_aware_recovery_config=copy.deepcopy(
+                self._state_aware_recovery_config.as_dict()
+            ),
+            state_aware_recovery_state=copy.deepcopy(
+                self._state_aware_recovery.state.as_dict()
+            ),
+            last_recovery_decision=copy.deepcopy(
+                self._last_recovery_decision
+            ),
+            pending_recovery_handoff=copy.deepcopy(
+                self._pending_recovery_handoff
+            ),
+            recovery_control_applied=bool(self._recovery_control_applied),
+            recovery_handoff_accepted=bool(self._recovery_handoff_accepted),
+            last_recovery_alignment_token=copy.deepcopy(
+                self._last_recovery_alignment_token
+            ),
+            last_gripper_command=self._last_gripper_command,
             world_time=float(getattr(self.world, "current_time", 0.0)),
         )
 
@@ -753,7 +923,7 @@ class IsaacPickPlaceEnv:
         return self._format_obs(obs), info
 
     def restore_branch_state(self, state: PickPlaceBranchState) -> dict[str, float]:
-        if state.schema_version != "pick_place_branch_state_v1":
+        if state.schema_version != PICK_PLACE_BRANCH_STATE_SCHEMA:
             raise ValueError(f"Unsupported branch state: {state.schema_version}")
         if self._physical_safety_mode != "none":
             raise RuntimeError(
@@ -761,6 +931,37 @@ class IsaacPickPlaceEnv:
             )
         if len(state.cube_states) != len(self.cubes):
             raise ValueError("Branch state cube count does not match the environment")
+        if bool(state.strict_task_semantics_enabled) != bool(
+            self._strict_task_semantics_enabled()
+        ):
+            raise ValueError(
+                "Branch state strict-task mode does not match the environment"
+            )
+        if state.strict_task_semantics_config != (
+            self._strict_task_semantics_config.as_dict()
+        ):
+            raise ValueError(
+                "Branch state strict-task config does not match the environment"
+            )
+        if bool(state.state_aware_recovery_enabled) != bool(
+            self._state_aware_recovery_enabled()
+        ):
+            raise ValueError(
+                "Branch state recovery mode does not match the environment"
+            )
+        if (
+            bool(state.state_aware_recovery_enabled)
+            and not bool(state.strict_task_semantics_enabled)
+        ):
+            raise ValueError(
+                "Branch state recovery requires strict-task semantics"
+            )
+        if state.state_aware_recovery_config != (
+            self._state_aware_recovery_config.as_dict()
+        ):
+            raise ValueError(
+                "Branch state recovery config does not match the environment"
+            )
 
         self.robot.set_joint_positions(state.robot_joint_positions.copy())
         if hasattr(self.robot, "set_joint_velocities"):
@@ -815,6 +1016,29 @@ class IsaacPickPlaceEnv:
         self._last_physical_safety_diagnostics = copy.deepcopy(
             state.last_physical_safety_diagnostics
         )
+        self._strict_task_controller.restore_state(
+            copy.deepcopy(state.strict_task_semantics_state)
+        )
+        self._last_strict_task_decision = copy.deepcopy(
+            state.last_strict_task_decision
+        )
+        self._state_aware_recovery.restore_state(
+            copy.deepcopy(state.state_aware_recovery_state)
+        )
+        self._last_recovery_decision = copy.deepcopy(
+            state.last_recovery_decision
+        )
+        self._pending_recovery_handoff = copy.deepcopy(
+            state.pending_recovery_handoff
+        )
+        self._recovery_control_applied = bool(state.recovery_control_applied)
+        self._recovery_handoff_accepted = bool(
+            state.recovery_handoff_accepted
+        )
+        self._last_recovery_alignment_token = copy.deepcopy(
+            state.last_recovery_alignment_token
+        )
+        self._last_gripper_command = state.last_gripper_command
         self.controller.reset()
         _restore_robot_applied_action_state(
             self.robot,
@@ -1245,6 +1469,77 @@ class IsaacPickPlaceEnv:
             )
         return target_pos, target_quat, next_yaw
 
+    def _fixed_target_orientation(self, yaw: float) -> np.ndarray | None:
+        if not self.config.fixed_orientation:
+            return None
+        return _safe_quat(
+            self._euler_angles_to_quat(
+                np.array([0.0, np.pi, float(yaw)], dtype=float)
+            )
+        )
+
+    def _state_aware_recovery_enabled(self) -> bool:
+        return bool(
+            getattr(getattr(self, "config", None), "state_aware_recovery", False)
+        )
+
+    def _state_aware_recovery_evidence(
+        self, obs: Mapping[str, np.ndarray]
+    ) -> StateAwareRecoveryEvidence:
+        intervention = max(
+            0.0,
+            float(
+                self._last_physical_safety_diagnostics.intervention_norm_radps
+            ),
+        )
+        return StateAwareRecoveryEvidence(
+            ee_position_m=np.asarray(obs["ee_pos"], dtype=float),
+            cube_position_m=np.asarray(obs["cube_pos"], dtype=float),
+            place_target_position_m=np.asarray(
+                obs["place_target_pos"], dtype=float
+            ),
+            cube_speed_mps=float(
+                np.linalg.norm(np.asarray(obs["cube_lin_vel"], dtype=float))
+            ),
+            joint_speed_radps=float(
+                np.linalg.norm(np.asarray(obs["robot_joint_vel"], dtype=float))
+            ),
+            has_grasped_cube=bool(
+                float(np.asarray(obs["has_grasped_cube"]).reshape(-1)[0]) > 0.5
+            ),
+            cbf_clear=bool(
+                not self._strict_task_controller.state.cbf_hold_latched
+                and intervention
+                <= float(
+                    self._strict_task_semantics_config.cbf_pause_exit_norm_radps
+                )
+            ),
+        )
+
+    def _prepare_state_aware_recovery_control(
+        self, obs: Mapping[str, np.ndarray]
+    ) -> StateAwareRecoveryDecision:
+        if not self._state_aware_recovery_enabled():
+            return self._state_aware_recovery.update(
+                self._state_aware_recovery_evidence(obs)
+            )
+        if self._strict_task_controller.state.success_latched:
+            self._state_aware_recovery.cancel_for_success()
+        return self._state_aware_recovery.update(
+            self._state_aware_recovery_evidence(obs)
+        )
+
+    def _recovery_gripper_command(
+        self, desired_closed: bool | None
+    ) -> str | None:
+        if desired_closed is None:
+            return None
+        desired = bool(desired_closed)
+        if desired == bool(self.gripper_closed):
+            return None
+        self.gripper_closed = desired
+        return "close" if desired else "open"
+
     def _reset_strict_task_semantics(
         self, obs: Mapping[str, np.ndarray]
     ) -> None:
@@ -1258,6 +1553,12 @@ class IsaacPickPlaceEnv:
         )
         self._last_strict_task_decision = None
         self._last_gripper_command = None
+        self._state_aware_recovery.reset()
+        self._last_recovery_decision = None
+        self._pending_recovery_handoff = None
+        self._recovery_control_applied = False
+        self._recovery_handoff_accepted = False
+        self._last_recovery_alignment_token = None
 
     def _strict_task_semantics_enabled(self) -> bool:
         return bool(
@@ -1303,6 +1604,44 @@ class IsaacPickPlaceEnv:
                 ),
             ),
         )
+
+    def _cbf_task_progress_context(
+        self,
+        *,
+        target_pos: np.ndarray,
+        recovery_decision: StateAwareRecoveryDecision,
+    ) -> dict[str, Any]:
+        """Expose only frozen task/recovery semantics needed by B v2."""
+
+        obs = self._last_obs
+        if obs is None:
+            raise RuntimeError("task-progress context requires a current observation")
+        evidence = self._strict_task_evidence(obs)
+        strict_state = self._strict_task_controller.state
+        place_spatially_ready = bool(
+            evidence.cube_target_xy_error_m
+            <= float(self._strict_task_semantics_config.place_xy_tolerance_m)
+            and evidence.cube_target_z_error_m
+            <= float(self._strict_task_semantics_config.place_z_tolerance_m)
+            and strict_state.maximum_cube_lift_m
+            >= float(self._strict_task_semantics_config.minimum_cube_lift_m)
+            and strict_state.grasp_observed
+            and evidence.grasp_candidate
+        )
+        return {
+            "schema_version": "phase_progress_runtime_context_v1",
+            "controller_event": int(self.phase_event),
+            "controller_t": float(self.phase_t),
+            "target_position_world_m": np.asarray(
+                target_pos, dtype=float
+            ).reshape(3),
+            "recovery_control_active": bool(self._recovery_control_applied),
+            "recovery_mode": str(recovery_decision.mode),
+            "recovery_stage": str(recovery_decision.stage),
+            "grasp_candidate": bool(evidence.grasp_candidate),
+            "strict_grasp_observed": bool(strict_state.grasp_observed),
+            "place_spatially_ready": place_spatially_ready,
+        }
 
     def _gripper_command(
         self, action: np.ndarray, obs: dict[str, np.ndarray]
@@ -1357,9 +1696,24 @@ class IsaacPickPlaceEnv:
                 release_dist=self.config.release_dist,
             )
         elif self.config.gripper_mode == "policy":
-            self.gripper_closed = _policy_gripper_should_close(
+            requested_closed = _policy_gripper_should_close(
                 action, self.gripper_closed
             )
+            # A one-step policy spike must not release a physically grasped
+            # object before the strict controller has confirmed placement.
+            # The policy still owns the eventual event-7 open command.
+            if (
+                self._strict_task_semantics_enabled()
+                and previous_closed
+                and not requested_closed
+                and float(np.asarray(obs["has_grasped_cube"]).reshape(-1)[0]) > 0.5
+                and (
+                    int(self.phase_event) != 7
+                    or not self._strict_task_controller.release_command_allowed()
+                )
+            ):
+                requested_closed = True
+            self.gripper_closed = requested_closed
         else:
             raise ValueError(f"Unknown gripper_mode: {self.config.gripper_mode}")
 
@@ -1420,8 +1774,14 @@ class IsaacPickPlaceEnv:
         self,
         obs: dict[str, np.ndarray],
         events_dt: tuple[float, ...] | None = None,
+        *,
+        freeze_for_recovery: bool = False,
     ) -> None:
-        if events_dt is None:
+        if freeze_for_recovery:
+            next_event = int(self.phase_event)
+            next_t = float(self.phase_t)
+            terminal_event = 10 if events_dt is None else len(events_dt)
+        elif events_dt is None:
             next_event, next_t = advance_pick_place_event(
                 self.phase_event, self.phase_t
             )
@@ -1484,11 +1844,29 @@ class IsaacPickPlaceEnv:
         event_before = int(self.phase_event)
         t_before = float(self.phase_t)
         reason = "paused"
+        recovery_control = False
+        handoff_reason = ""
         if reset_for_reentry:
             reason = self._synchronize_task_phase_for_reentry(obs)
             self._write_phase_observation(obs)
         elif advance:
-            self._advance_phase(obs)
+            recovery_control = bool(
+                self._state_aware_recovery_enabled()
+                and self._recovery_control_applied
+            )
+            if recovery_control:
+                self._align_phase_for_active_recovery(obs)
+                self._advance_phase_with_events(
+                    obs,
+                    freeze_for_recovery=True,
+                )
+            else:
+                self._advance_phase(obs)
+            strict_decision = getattr(self, "_last_strict_task_decision", None)
+            recovery_requested = self._request_state_aware_recovery(
+                obs, strict_decision
+            )
+            handoff_reason = self._finish_state_aware_recovery_step(obs)
             if bool(
                 self._strict_task_semantics_enabled()
                 or
@@ -1499,12 +1877,24 @@ class IsaacPickPlaceEnv:
                 )
             ):
                 self._write_phase_observation(obs)
-            reason = (
-                self._last_strict_task_decision.reason
-                if self._strict_task_semantics_enabled()
-                and getattr(self, "_last_strict_task_decision", None) is not None
-                else "advanced"
-            )
+            if handoff_reason:
+                reason = handoff_reason
+            elif recovery_requested:
+                reason = str(strict_decision.reason)
+            elif recovery_control:
+                reason = (
+                    str(strict_decision.reason)
+                    if strict_decision is not None
+                    and strict_decision.reason == "cbf_intervention_pause"
+                    else f"state_aware_recovery_{self._state_aware_recovery.state.stage}"
+                )
+            else:
+                reason = (
+                    self._last_strict_task_decision.reason
+                    if self._strict_task_semantics_enabled()
+                    and getattr(self, "_last_strict_task_decision", None) is not None
+                    else "advanced"
+                )
         strict_decision = getattr(self, "_last_strict_task_decision", None)
         internally_held = bool(
             self._strict_task_semantics_enabled()
@@ -1518,10 +1908,22 @@ class IsaacPickPlaceEnv:
             and strict_decision is not None
             and strict_decision.reentry
         )
+        recovery_paused = bool(
+            advance
+            and self._state_aware_recovery_enabled()
+            and (
+                recovery_control
+                or self._state_aware_recovery.state.active
+            )
+        )
         return {
             "advanced": bool(advance),
-            "paused": bool(not advance or internally_held),
-            "reentry": bool(reset_for_reentry or internal_reentry),
+            "paused": bool(not advance or internally_held or recovery_paused),
+            "reentry": bool(
+                reset_for_reentry
+                or internal_reentry
+                or bool(self._recovery_handoff_accepted if advance else False)
+            ),
             "reason": reason,
             "event_before": event_before,
             "event_after": int(self.phase_event),
@@ -1533,6 +1935,150 @@ class IsaacPickPlaceEnv:
             ),
         }
 
+    def _align_phase_for_active_recovery(
+        self, obs: Mapping[str, np.ndarray]
+    ) -> None:
+        decision = self._last_recovery_decision
+        if decision is None or decision.mode not in ("place", "regrasp"):
+            return
+        target_event = 6 if decision.mode == "place" else 0
+        alignment_token = (
+            int(self._state_aware_recovery.state.activation_count),
+            int(self._state_aware_recovery.state.replan_count),
+            str(decision.mode),
+        )
+        if alignment_token != self._last_recovery_alignment_token:
+            self._strict_task_controller.begin_recovery(
+                mode=decision.mode,
+                evidence=self._strict_task_evidence(obs),
+            )
+            self._last_recovery_alignment_token = alignment_token
+        if int(self.phase_event) == target_event:
+            return
+        self.phase_event = target_event
+        self.phase_t = 0.0
+        self.phase_hold_steps = 0
+
+    def _request_state_aware_recovery(
+        self,
+        obs: Mapping[str, np.ndarray],
+        decision: StrictTaskPhaseDecision | None,
+    ) -> bool:
+        if (
+            not self._state_aware_recovery_enabled()
+            or decision is None
+            or decision.recovery_request not in ("place", "regrasp")
+        ):
+            return False
+        self._state_aware_recovery.request(
+            decision.recovery_request,
+            self._state_aware_recovery_evidence(obs),
+            source_event=int(self.phase_event),
+            source_progress=float(self.phase_t),
+        )
+        return True
+
+    def _finish_state_aware_recovery_step(
+        self, obs: Mapping[str, np.ndarray]
+    ) -> str:
+        if not self._state_aware_recovery_enabled():
+            self._pending_recovery_handoff = None
+            self._recovery_control_applied = False
+            return ""
+        recovery_decision = self._last_recovery_decision
+        if recovery_decision is not None and recovery_decision.timed_out:
+            self._strict_task_controller.latch_failure(
+                "state_aware_recovery_timeout"
+            )
+            self._pending_recovery_handoff = None
+            self._recovery_control_applied = False
+            return "state_aware_recovery_timeout"
+
+        pending = self._pending_recovery_handoff
+        if pending is None:
+            self._recovery_control_applied = False
+            return ""
+        mode = "place" if pending.handoff_event == 6 else "regrasp"
+        evidence = self._state_aware_recovery_evidence(obs)
+        intervention = max(
+            0.0,
+            float(
+                self._last_physical_safety_diagnostics.intervention_norm_radps
+            ),
+        )
+        renewed_cbf = bool(
+            self._strict_task_controller.state.cbf_hold_latched
+            or intervention
+            >= float(
+                self._strict_task_semantics_config.cbf_pause_enter_norm_radps
+            )
+        )
+        live_state = self._state_aware_recovery.state
+        stale_handoff = bool(
+            not live_state.active
+            or int(live_state.plan_id) != int(pending.plan_id)
+            or str(live_state.mode) != mode
+        )
+        if stale_handoff:
+            self._pending_recovery_handoff = None
+            self._recovery_control_applied = False
+            return "state_aware_recovery_stale_handoff_discarded"
+
+        if renewed_cbf:
+            self._state_aware_recovery.request(
+                mode,
+                evidence,
+                source_event=int(self.phase_event),
+                source_progress=float(self.phase_t),
+            )
+            self._pending_recovery_handoff = None
+            self._recovery_control_applied = False
+            return "state_aware_recovery_handoff_deferred_by_cbf"
+
+        mode_consistent = bool(
+            (mode == "place" and evidence.has_grasped_cube)
+            or (mode == "regrasp" and not evidence.has_grasped_cube)
+        )
+        if not mode_consistent:
+            self._state_aware_recovery.defer_handoff(
+                "state_aware_recovery_handoff_mode_mismatch"
+            )
+            self._pending_recovery_handoff = None
+            self._recovery_control_applied = False
+            return "state_aware_recovery_handoff_mode_mismatch"
+
+        post_anchor_ready, _ = self._state_aware_recovery.anchor_is_ready(
+            evidence,
+            np.asarray(pending.target_position_m, dtype=float).reshape(3),
+        )
+        if not post_anchor_ready:
+            self._state_aware_recovery.defer_handoff(
+                "state_aware_recovery_handoff_postcheck_failed"
+            )
+            self._pending_recovery_handoff = None
+            self._recovery_control_applied = False
+            return "state_aware_recovery_handoff_postcheck_failed"
+
+        event_before = int(self.phase_event)
+        progress_before = float(self.phase_t)
+        handoff = self._strict_task_controller.recovery_handoff(
+            event=int(pending.handoff_event),
+            progress=float(pending.handoff_progress),
+            mode=mode,
+            evidence=self._strict_task_evidence(obs),
+            event_before=event_before,
+            progress_before=progress_before,
+        )
+        self.phase_event = int(handoff.event)
+        self.phase_t = float(handoff.progress)
+        self.phase_hold_steps = 0
+        self._last_strict_task_decision = handoff
+        self._state_aware_recovery.accept_handoff()
+        self._recovery_handoff_accepted = True
+        self._pending_recovery_handoff = None
+        self._recovery_control_applied = False
+        return str(handoff.reason)
+
     def _synchronize_task_phase_for_reentry(
         self,
         obs: dict[str, np.ndarray],
@@ -1542,6 +2088,28 @@ class IsaacPickPlaceEnv:
         )
         cube_target_dist = float(np.linalg.norm(obs["cube_to_place_target"]))
         reason = "resume_paused_event"
+        if self._state_aware_recovery_enabled():
+            reentry_class = self._strict_task_controller.classify_external_reentry(
+                event=int(self.phase_event),
+                evidence=self._strict_task_evidence(obs),
+            )
+            if reentry_class == "released":
+                return reason
+            if reentry_class == "wait":
+                self.phase_hold_steps += 1
+                return "hold_for_external_reentry_grasp_loss_confirmation"
+            recovery_mode = str(reentry_class)
+            if recovery_mode not in ("place", "regrasp"):
+                raise RuntimeError(
+                    f"Unsupported external reentry class: {recovery_mode!r}"
+                )
+            self._state_aware_recovery.request(
+                recovery_mode,
+                self._state_aware_recovery_evidence(obs),
+                source_event=int(self.phase_event),
+                source_progress=float(self.phase_t),
+            )
+            return f"state_aware_{recovery_mode}_reentry_requested"
         if (
             self.phase_event >= 4
             and not has_grasped
@@ -1646,8 +2214,64 @@ class IsaacPickPlaceEnv:
                 "failure_reason": str(
                     self._last_strict_task_decision.failure_reason
                 ),
+                "recovery_request": str(
+                    self._last_strict_task_decision.recovery_request
+                ),
             }
         )
+        recovery_decision = self._last_recovery_decision
+        recovery_payload = {
+            "schema_version": STATE_AWARE_RECOVERY_SCHEMA,
+            "enabled": self._state_aware_recovery_enabled(),
+            "config": self._state_aware_recovery_config.as_dict(),
+            "state": self._state_aware_recovery.state.as_dict(),
+            "control_authority": bool(
+                recovery_decision is not None
+                and (
+                    recovery_decision.target_position_m is not None
+                    or recovery_decision.timed_out
+                )
+            ),
+            "handoff_attempted": bool(
+                recovery_decision is not None and recovery_decision.handoff
+            ),
+            "handoff_accepted": bool(self._recovery_handoff_accepted),
+            "last_decision": (
+                None
+                if recovery_decision is None
+                else {
+                    "active": bool(recovery_decision.active),
+                    "plan_id": int(recovery_decision.plan_id),
+                    "mode": str(recovery_decision.mode),
+                    "stage": str(recovery_decision.stage),
+                    "target_position_m": (
+                        None
+                        if recovery_decision.target_position_m is None
+                        else np.asarray(
+                            recovery_decision.target_position_m, dtype=float
+                        ).reshape(3).tolist()
+                    ),
+                    "desired_gripper_closed": (
+                        None
+                        if recovery_decision.desired_gripper_closed is None
+                        else bool(recovery_decision.desired_gripper_closed)
+                    ),
+                    "anchor_ready": bool(recovery_decision.anchor_ready),
+                    "ready_streak": int(recovery_decision.ready_streak),
+                    "anchor_error_m": (
+                        None
+                        if recovery_decision.anchor_error_m is None
+                        else float(recovery_decision.anchor_error_m)
+                    ),
+                    "handoff": bool(recovery_decision.handoff),
+                    "handoff_event": recovery_decision.handoff_event,
+                    "handoff_progress": recovery_decision.handoff_progress,
+                    "stage_changed": bool(recovery_decision.stage_changed),
+                    "timed_out": bool(recovery_decision.timed_out),
+                    "reason": str(recovery_decision.reason),
+                }
+            ),
+        }
         task_terminal_reason = ""
         if bool(strict_state["success_latched"]):
             task_terminal_reason = "success"
@@ -1679,6 +2303,7 @@ class IsaacPickPlaceEnv:
                 "state": strict_state,
                 "last_decision": strict_decision,
             },
+            "state_aware_recovery": recovery_payload,
             "errp_feedback": float(errp_result.feedback),
             "errp_uncertainty": float(errp_result.uncertainty),
             "errp_label": int(errp_result.label),
@@ -1859,6 +2484,9 @@ class IsaacPickPlaceEnv:
             ),
             "physical_safety_controller": self._physical_safety_mode,
             "physical_safety": physical_safety,
+            "physical_command_provenance": dict(
+                self._last_command_provenance
+            ),
             "physical_safety_active": bool(physical_safety["active"]),
             "physical_safety_intervention_available": bool(
                 physical_safety["intervention_available"]
@@ -2423,6 +3051,49 @@ def _intentional_human_absence_from_aux(payload: Mapping[str, Any]) -> bool:
     if not isinstance(value, (bool, np.bool_)):
         raise ValueError("intentional_human_absence must be an exact boolean")
     return bool(value)
+
+
+def _safe_robot_joint_vector(robot, method_name: str) -> list[float]:
+    method = getattr(robot, method_name, None)
+    if not callable(method):
+        return []
+    try:
+        values = np.asarray(method(), dtype=float).reshape(-1)
+    except Exception:
+        return []
+    if not np.all(np.isfinite(values)):
+        return []
+    return [float(value) for value in values]
+
+
+def _articulation_action_payload(action) -> dict[str, Any]:
+    """Serialize the exact action object passed to ``robot.apply_action``."""
+
+    payload: dict[str, Any] = {}
+    for source_name, output_name in (
+        ("joint_indices", "joint_indices"),
+        ("joint_positions", "joint_positions_rad"),
+        ("joint_velocities", "joint_velocities_radps"),
+        ("joint_efforts", "joint_efforts"),
+    ):
+        value = getattr(action, source_name, None)
+        if value is None:
+            payload[output_name] = []
+            continue
+        try:
+            array = np.asarray(value).reshape(-1)
+            if source_name == "joint_indices":
+                payload[output_name] = [int(item) for item in array]
+            else:
+                numeric = np.asarray(array, dtype=float)
+                payload[output_name] = (
+                    [float(item) for item in numeric]
+                    if np.all(np.isfinite(numeric))
+                    else []
+                )
+        except Exception:
+            payload[output_name] = []
+    return payload
 
 
 def _safe_quat(quat: np.ndarray | list[float] | tuple[float, ...]) -> np.ndarray:

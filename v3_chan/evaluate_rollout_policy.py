@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
+import math
 import os
 import sys
 import time
@@ -29,7 +31,10 @@ from end_effector_safety_geometry import (  # noqa: E402
     distance_gate,
 )
 from scene_randomization import scene_layout_id  # noqa: E402
-from physical_safety_controllers import PHYSICAL_SAFETY_MODES  # noqa: E402
+from physical_safety_controllers import (  # noqa: E402
+    CBF_OBJECTIVE_MODES,
+    PHYSICAL_SAFETY_MODES,
+)
 from trajectory_metrics import CartesianMotionTracker  # noqa: E402
 
 
@@ -50,6 +55,119 @@ def _task_phase_name(controller_event: int) -> str:
     if event <= 6:
         return "move_to_target"
     return "release_cube"
+
+
+def _task_progress_v1(
+    controller_event: int, controller_t: float, success: bool
+) -> float:
+    """Normalized strict-controller clock proxy used only for paired analysis.
+
+    Events 0..7 cover approach through release; event 8/completed (or the
+    explicit success latch) maps to one.  This metric is deliberately named a
+    controller progress proxy and is reported alongside physical cube/goal
+    regression, so a paused clock cannot masquerade as physical retreat.
+    """
+
+    if bool(success):
+        return 1.0
+    event = min(8, max(0, int(controller_event)))
+    fraction = min(1.0, max(0.0, float(controller_t)))
+    return float(min(1.0, (event + fraction) / 8.0))
+
+
+def _paired_runtime_state_fingerprint(
+    env, info: Mapping[str, Any], *, task_action: np.ndarray | None
+) -> str:
+    """Hash condition-independent state for deterministic paired-prefix proof."""
+
+    def vector_from(method_owner, method_name: str) -> list[float]:
+        method = getattr(method_owner, method_name, None)
+        if not callable(method):
+            return []
+        try:
+            values = np.asarray(method(), dtype=float).reshape(-1)
+        except Exception:
+            return []
+        return [float(value) for value in values] if np.all(np.isfinite(values)) else []
+
+    cubes = []
+    for cube in getattr(env, "cubes", ()):
+        try:
+            position, orientation = cube.get_world_pose()
+            cubes.append(
+                {
+                    "name": str(getattr(cube, "name", "")),
+                    "position": np.asarray(position, dtype=float).reshape(-1).tolist(),
+                    "orientation": np.asarray(orientation, dtype=float).reshape(-1).tolist(),
+                }
+            )
+        except Exception:
+            cubes.append({"name": str(getattr(cube, "name", ""))})
+    replay_state: Mapping[str, Any] | dict[str, Any] = {}
+    replay_capture = getattr(getattr(env, "human_state_fn", None), "capture_state", None)
+    if callable(replay_capture):
+        try:
+            replay_state = replay_capture()
+        except Exception:
+            replay_state = {"capture_failed": True}
+    applied = {}
+    get_applied = getattr(getattr(env, "robot", None), "get_applied_action", None)
+    if callable(get_applied):
+        try:
+            applied_action = get_applied()
+            applied = {
+                name: (
+                    []
+                    if getattr(applied_action, name, None) is None
+                    else np.asarray(getattr(applied_action, name)).reshape(-1).tolist()
+                )
+                for name in ("joint_positions", "joint_velocities", "joint_efforts")
+            }
+        except Exception:
+            applied = {"capture_failed": True}
+    previous_correction = getattr(
+        getattr(env, "_cbf_filter", None), "_previous_correction", None
+    )
+    payload = {
+        "schema": "paired_runtime_state_fingerprint_v1",
+        "robot_q": vector_from(env.robot, "get_joint_positions"),
+        "robot_qd": vector_from(env.robot, "get_joint_velocities"),
+        "robot_applied_targets": applied,
+        "cubes": cubes,
+        "controller_event": int(info.get("controller_event", -1)),
+        "controller_t": float(info.get("controller_t", 0.0)),
+        "phase_hold_steps": int(info.get("phase_hold_steps", 0)),
+        "gripper_closed": bool(info.get("gripper_closed", False)),
+        "strict_task_semantics": info.get("strict_task_semantics", {}),
+        "state_aware_recovery": info.get("state_aware_recovery", {}),
+        "human_replay": replay_state,
+        "human_replay_aux_state": info.get("human_replay_aux_state", {}),
+        "observation": info.get("obs_dict", {}),
+        "task_action": (
+            []
+            if task_action is None
+            else np.asarray(task_action, dtype=float).reshape(-1).tolist()
+        ),
+        "env_rng": getattr(getattr(env, "rng", None), "bit_generator", None).state,
+        "cbf_previous_correction": (
+            []
+            if previous_correction is None
+            else np.asarray(previous_correction, dtype=float).reshape(-1).tolist()
+        ),
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=lambda value: (
+            value.tolist()
+            if isinstance(value, np.ndarray)
+            else value.item()
+            if isinstance(value, np.generic)
+            else str(value)
+        ),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _json_mapping(value: Any) -> str:
@@ -218,6 +336,34 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--cbf-prediction-horizon-s", type=float, default=0.15)
     parser.add_argument("--cbf-max-prediction-buffer-m", type=float, default=0.08)
     parser.add_argument("--cbf-max-joint-speed-rad-s", type=float, default=2.0)
+    parser.add_argument(
+        "--cbf-objective-mode",
+        choices=CBF_OBJECTIVE_MODES,
+        default="joint_nominal",
+    )
+    parser.add_argument("--cbf-task-space-weight", type=float, default=1.0)
+    parser.add_argument(
+        "--cbf-task-yaw-length-scale-m-per-rad", type=float, default=0.10
+    )
+    parser.add_argument(
+        "--cbf-joint-regularization-epsilon", type=float, default=0.05
+    )
+    parser.add_argument(
+        "--cbf-correction-smoothness-weight", type=float, default=1.0
+    )
+    parser.add_argument("--cbf-progress-retention-rho", type=float, default=0.70)
+    parser.add_argument("--cbf-progress-penalty-weight", type=float, default=50.0)
+    parser.add_argument(
+        "--cbf-progress-nominal-threshold-mps", type=float, default=0.01
+    )
+    parser.add_argument(
+        "--extended-safety-logging",
+        action="store_true",
+        help=(
+            "Enable distal-link static-environment and self-collision contact/gap "
+            "diagnostics. Task objects remain excluded from this backup logger."
+        ),
+    )
     parser.add_argument("--phase-gate-close-dist", type=float, default=0.075)
     parser.add_argument("--phase-gate-max-hold", type=int, default=320)
     pseudo_errp_group = parser.add_mutually_exclusive_group()
@@ -366,6 +512,15 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Horizontal released-cube target tolerance used by strict task "
             "semantics. It is recorded in the result contract."
+        ),
+    )
+    parser.add_argument(
+        "--state-aware-recovery",
+        action="store_true",
+        help=(
+            "Use the opt-in deterministic post-CBF Recovery Bridge. Recovery "
+            "targets override the nominal RMPFlow target but still pass through "
+            "the configured physical safety controller."
         ),
     )
     parser.add_argument(
@@ -735,6 +890,14 @@ class PolicyRunner:
             "observation_fields": list(self.observation_fields),
             "action_dim": action_dim,
             "hidden_dims": list(hidden_dims),
+            "model_class": str(checkpoint.get("model_class", "MLPPolicy")),
+            "gripper_target_contract": checkpoint.get(
+                "gripper_target_contract", {}
+            ),
+            "gripper_event_mapping": checkpoint.get("gripper_event_mapping", {}),
+            "gripper_inference_contract": checkpoint.get(
+                "gripper_inference_contract", {}
+            ),
             "torch_version": torch.__version__,
             "device": str(self.device),
         }
@@ -1055,6 +1218,7 @@ def _run() -> None:
             strict_place_xy_tolerance_m=float(
                 args.strict_place_xy_tolerance_m
             ),
+            state_aware_recovery=bool(args.state_aware_recovery),
             reward_version=effective_task_reward_version,
             observation_mode="flat",
             seed=args.seed,
@@ -1079,6 +1243,23 @@ def _run() -> None:
             cbf_prediction_horizon_s=args.cbf_prediction_horizon_s,
             cbf_max_prediction_buffer_m=args.cbf_max_prediction_buffer_m,
             cbf_max_joint_speed_rad_s=args.cbf_max_joint_speed_rad_s,
+            cbf_objective_mode=args.cbf_objective_mode,
+            cbf_task_space_weight=args.cbf_task_space_weight,
+            cbf_task_yaw_length_scale_m_per_rad=(
+                args.cbf_task_yaw_length_scale_m_per_rad
+            ),
+            cbf_joint_regularization_epsilon=(
+                args.cbf_joint_regularization_epsilon
+            ),
+            cbf_correction_smoothness_weight=(
+                args.cbf_correction_smoothness_weight
+            ),
+            cbf_progress_retention_rho=args.cbf_progress_retention_rho,
+            cbf_progress_penalty_weight=args.cbf_progress_penalty_weight,
+            cbf_progress_nominal_threshold_mps=(
+                args.cbf_progress_nominal_threshold_mps
+            ),
+            extended_backup_safety_geometry=bool(args.extended_safety_logging),
         ),
         human_state_fn=live_vr if live_vr is not None else human_replay,
     )
@@ -1246,6 +1427,14 @@ def _run() -> None:
             near_steps = 0
             near_miss_steps = 0
             geometry_valid_steps = 0
+            logged_gap_below_configured_margin_steps = 0
+            logged_gap_below_2cm_steps = 0
+            static_collision_steps = 0
+            self_collision_steps = 0
+            static_geometry_valid_steps = 0
+            self_geometry_valid_steps = 0
+            min_static_surface_gap_m = MISSING_DISTANCE_M
+            min_self_surface_gap_m = MISSING_DISTANCE_M
             collision_event_count = 0
             collision_was_active = False
             collision_consecutive_steps = 0
@@ -1299,6 +1488,7 @@ def _run() -> None:
             grasp_acquisition_count = 0
             grasp_loss_count = 0
             release_command_count = 0
+            object_drop_count = 0
             task_phase_paused_steps = 0
             task_phase_reentry_count = 0
             physical_intervention_consecutive_steps = 0
@@ -1318,6 +1508,30 @@ def _run() -> None:
             strict_semantics_last_decision: dict[str, Any] = dict(
                 _mapping_or_empty(initial_strict_payload.get("last_decision"))
             )
+            initial_recovery_payload = _mapping_or_empty(
+                info.get("state_aware_recovery")
+            )
+            recovery_config: dict[str, Any] = dict(
+                _mapping_or_empty(initial_recovery_payload.get("config"))
+            )
+            recovery_final_state: dict[str, Any] = dict(
+                _mapping_or_empty(initial_recovery_payload.get("state"))
+            )
+            recovery_last_decision: dict[str, Any] = dict(
+                _mapping_or_empty(initial_recovery_payload.get("last_decision"))
+            )
+            recovery_control_steps = 0
+            recovery_place_control_steps = 0
+            recovery_regrasp_control_steps = 0
+            recovery_handoff_steps = 0
+            recovery_stage_change_steps = 0
+            initial_state_fingerprint = _paired_runtime_state_fingerprint(
+                env, info, task_action=None
+            )
+            response_branch_state_fingerprint = ""
+            response_branch_step = -1
+            exact_prefix_digest_through_branch = ""
+            exact_prefix_hasher = hashlib.sha256()
 
             for _ in range(args.max_steps):
                 if live_vr is not None:
@@ -1402,6 +1616,12 @@ def _run() -> None:
                 controller_event_before = int(info.get("controller_event", -1))
                 controller_t_before = float(info.get("controller_t", 0.0))
                 task_action = np.asarray(action, dtype=np.float32).reshape(-1).copy()
+                pre_step_state_fingerprint = _paired_runtime_state_fingerprint(
+                    env, info, task_action=task_action
+                )
+                exact_prefix_hasher.update(
+                    (pre_step_state_fingerprint + "\n").encode("utf-8")
+                )
                 obs, reward, terminated, truncated, info = env.step(action)
                 if args.render and args.render_step_delay_sec > 0.0:
                     time.sleep(float(args.render_step_delay_sec))
@@ -1441,6 +1661,12 @@ def _run() -> None:
                     release_command_count += 1
                     if first_release_step < 0:
                         first_release_step = step_index
+                object_drop = bool(
+                    grasp_lost
+                    and not release_commanded
+                    and float(info["cube_target_dist"]) > float(args.success_dist)
+                )
+                object_drop_count += int(object_drop)
                 controller_event = int(info["controller_event"])
                 if not (
                     args.strict_task_semantics and controller_event >= 10
@@ -1500,6 +1726,111 @@ def _run() -> None:
                     strict_semantics_final_state = dict(strict_state)
                 if strict_decision:
                     strict_semantics_last_decision = dict(strict_decision)
+                recovery_payload = _mapping_or_empty(
+                    info.get("state_aware_recovery")
+                )
+                recovery_state = _mapping_or_empty(
+                    recovery_payload.get("state")
+                )
+                recovery_decision = _mapping_or_empty(
+                    recovery_payload.get("last_decision")
+                )
+                recovery_step_config = _mapping_or_empty(
+                    recovery_payload.get("config")
+                )
+                if recovery_step_config:
+                    recovery_config = dict(recovery_step_config)
+                if recovery_state:
+                    recovery_final_state = dict(recovery_state)
+                if recovery_decision:
+                    recovery_last_decision = dict(recovery_decision)
+                recovery_enabled = bool(
+                    recovery_payload.get("enabled", args.state_aware_recovery)
+                )
+                recovery_control_authority = bool(
+                    recovery_payload.get("control_authority", False)
+                )
+                recovery_active = bool(
+                    recovery_state.get(
+                        "active", recovery_decision.get("active", False)
+                    )
+                )
+                recovery_mode = str(
+                    recovery_decision.get(
+                        "mode", recovery_state.get("mode", "inactive")
+                    )
+                    or "inactive"
+                )
+                recovery_stage = str(
+                    recovery_decision.get(
+                        "stage", recovery_state.get("stage", "inactive")
+                    )
+                    or "inactive"
+                )
+                recovery_handoff_attempted = bool(
+                    recovery_decision.get("handoff", False)
+                )
+                recovery_handoff = bool(
+                    recovery_payload.get("handoff_accepted", False)
+                )
+                recovery_stage_changed = bool(
+                    recovery_decision.get("stage_changed", False)
+                )
+                recovery_timed_out = bool(
+                    recovery_decision.get("timed_out", False)
+                )
+                recovery_target = np.full(3, np.nan, dtype=float)
+                raw_recovery_target = recovery_decision.get("target_position_m")
+                if raw_recovery_target is not None:
+                    candidate_recovery_target = np.asarray(
+                        raw_recovery_target, dtype=float
+                    ).reshape(-1)
+                    if (
+                        candidate_recovery_target.size >= 3
+                        and np.all(np.isfinite(candidate_recovery_target[:3]))
+                    ):
+                        recovery_target = candidate_recovery_target[:3].copy()
+                recovery_anchor_error_value = recovery_decision.get(
+                    "anchor_error_m"
+                )
+                recovery_anchor_error_m = (
+                    float(recovery_anchor_error_value)
+                    if recovery_anchor_error_value is not None
+                    else math.nan
+                )
+                recovery_handoff_event_value = recovery_decision.get(
+                    "handoff_event"
+                )
+                recovery_handoff_event = (
+                    int(recovery_handoff_event_value)
+                    if recovery_handoff_event_value is not None
+                    else -1
+                )
+                recovery_handoff_progress_value = recovery_decision.get(
+                    "handoff_progress"
+                )
+                recovery_handoff_progress = (
+                    float(recovery_handoff_progress_value)
+                    if recovery_handoff_progress_value is not None
+                    else math.nan
+                )
+                recovery_desired_gripper_value = recovery_decision.get(
+                    "desired_gripper_closed"
+                )
+                recovery_desired_gripper_closed = (
+                    int(bool(recovery_desired_gripper_value))
+                    if recovery_desired_gripper_value is not None
+                    else -1
+                )
+                recovery_control_steps += int(recovery_control_authority)
+                recovery_place_control_steps += int(
+                    recovery_control_authority and recovery_mode == "place"
+                )
+                recovery_regrasp_control_steps += int(
+                    recovery_control_authority and recovery_mode == "regrasp"
+                )
+                recovery_handoff_steps += int(recovery_handoff)
+                recovery_stage_change_steps += int(recovery_stage_changed)
                 errp_feedback = float(info["errp_feedback"])
                 errp_uncertainty = float(info.get("errp_uncertainty", 0.0))
                 errp_count += int(info.get("errp_label", errp_feedback >= 0.5))
@@ -1533,6 +1864,24 @@ def _run() -> None:
                 near_steps += int(near_human)
                 near_miss_steps += int(_obs_flag(obs_dict, "near_miss"))
                 geometry_valid_steps += int(geometry_valid)
+                static_collision = bool(info.get("static_collision", False))
+                self_collision = bool(info.get("self_collision", False))
+                static_valid = bool(info.get("static_geometry_valid", False))
+                self_valid = bool(info.get("self_geometry_valid", False))
+                static_collision_steps += int(static_collision)
+                self_collision_steps += int(self_collision)
+                static_geometry_valid_steps += int(static_valid)
+                self_geometry_valid_steps += int(self_valid)
+                if static_valid:
+                    min_static_surface_gap_m = min(
+                        min_static_surface_gap_m,
+                        float(info.get("static_surface_gap_m", MISSING_DISTANCE_M)),
+                    )
+                if self_valid:
+                    min_self_surface_gap_m = min(
+                        min_self_surface_gap_m,
+                        float(info.get("self_surface_gap_m", MISSING_DISTANCE_M)),
+                    )
                 if human_collision and not collision_was_active:
                     collision_event_count += 1
                 collision_consecutive_steps = (
@@ -1575,6 +1924,15 @@ def _run() -> None:
                         default=MISSING_DISTANCE_M,
                     ),
                 )
+                below_configured_margin = bool(
+                    geometry_valid
+                    and post_surface_gap < float(args.cbf_safe_gap_m)
+                )
+                below_2cm = bool(geometry_valid and post_surface_gap < 0.02)
+                logged_gap_below_configured_margin_steps += int(
+                    below_configured_margin
+                )
+                logged_gap_below_2cm_steps += int(below_2cm)
                 if geometry_valid:
                     min_surface_gap = min(min_surface_gap, post_surface_gap)
                 step_ttc_s, step_ttc_valid = _minimum_ttc(obs_dict)
@@ -1642,6 +2000,12 @@ def _run() -> None:
                 reward_components = info.get("reward_components", {})
                 physical_safety = info.get("physical_safety", {})
                 physical_active = bool(physical_safety.get("active", False))
+                if physical_active and not response_branch_state_fingerprint:
+                    response_branch_state_fingerprint = pre_step_state_fingerprint
+                    response_branch_step = int(info["step"])
+                    exact_prefix_digest_through_branch = (
+                        exact_prefix_hasher.hexdigest()
+                    )
                 physical_feasible = bool(physical_safety.get("feasible", True))
                 intervention_available = bool(
                     physical_safety.get("intervention_available", False)
@@ -1815,6 +2179,7 @@ def _run() -> None:
                         "grasp_acquired": int(grasp_acquired),
                         "grasp_lost": int(grasp_lost),
                         "release_commanded": int(release_commanded),
+                        "object_drop": int(object_drop),
                         "ee_cube_dist_m": float(info["ee_cube_dist"]),
                         "cube_target_dist_m": float(info["cube_target_dist"]),
                         "cube_target_xy_error_m": float(
@@ -1883,6 +2248,78 @@ def _run() -> None:
                         "strict_task_semantics_last_decision_json": _json_mapping(
                             strict_decision
                         ),
+                        "state_aware_recovery_enabled": int(recovery_enabled),
+                        "state_aware_recovery_control_authority": int(
+                            recovery_control_authority
+                        ),
+                        "state_aware_recovery_active": int(recovery_active),
+                        "state_aware_recovery_mode": recovery_mode,
+                        "state_aware_recovery_stage": recovery_stage,
+                        "state_aware_recovery_reason": str(
+                            recovery_decision.get(
+                                "reason", recovery_state.get("last_reason", "")
+                            )
+                            or ""
+                        ),
+                        "state_aware_recovery_target_x_m": float(
+                            recovery_target[0]
+                        ),
+                        "state_aware_recovery_target_y_m": float(
+                            recovery_target[1]
+                        ),
+                        "state_aware_recovery_target_z_m": float(
+                            recovery_target[2]
+                        ),
+                        "state_aware_recovery_desired_gripper_closed": int(
+                            recovery_desired_gripper_closed
+                        ),
+                        "state_aware_recovery_anchor_ready": int(
+                            bool(recovery_decision.get("anchor_ready", False))
+                        ),
+                        "state_aware_recovery_ready_streak": int(
+                            recovery_decision.get(
+                                "ready_streak",
+                                recovery_state.get("ready_streak", 0),
+                            )
+                            or 0
+                        ),
+                        "state_aware_recovery_anchor_error_m": float(
+                            recovery_anchor_error_m
+                        ),
+                        "state_aware_recovery_handoff_attempted": int(
+                            recovery_handoff_attempted
+                        ),
+                        "state_aware_recovery_handoff": int(recovery_handoff),
+                        "state_aware_recovery_handoff_event": int(
+                            recovery_handoff_event
+                        ),
+                        "state_aware_recovery_handoff_progress": float(
+                            recovery_handoff_progress
+                        ),
+                        "state_aware_recovery_stage_changed": int(
+                            recovery_stage_changed
+                        ),
+                        "state_aware_recovery_timed_out": int(
+                            recovery_timed_out
+                        ),
+                        "state_aware_recovery_activation_count": int(
+                            recovery_state.get("activation_count", 0) or 0
+                        ),
+                        "state_aware_recovery_completion_count": int(
+                            recovery_state.get("completion_count", 0) or 0
+                        ),
+                        "state_aware_recovery_replan_count": int(
+                            recovery_state.get("replan_count", 0) or 0
+                        ),
+                        "state_aware_recovery_timeout_count": int(
+                            recovery_state.get("timeout_count", 0) or 0
+                        ),
+                        "state_aware_recovery_state_json": _json_mapping(
+                            recovery_state
+                        ),
+                        "state_aware_recovery_last_decision_json": _json_mapping(
+                            recovery_decision
+                        ),
                         "encounter_id": str(encounter.get("id", "")),
                         "encounter_target_severity": str(
                             encounter.get("target_severity", "")
@@ -1921,6 +2358,33 @@ def _run() -> None:
                         "near_miss": int(_obs_flag(obs_dict, "near_miss")),
                         "human_collision": int(human_collision),
                         "geometry_valid": int(geometry_valid),
+                        "logged_surface_gap_below_configured_margin": int(
+                            below_configured_margin
+                        ),
+                        "logged_surface_gap_below_2cm": int(below_2cm),
+                        "configured_safe_gap_m": float(args.cbf_safe_gap_m),
+                        "static_collision": int(static_collision),
+                        "static_geometry_valid": int(static_valid),
+                        "static_surface_gap_m": float(
+                            info.get("static_surface_gap_m", MISSING_DISTANCE_M)
+                        ),
+                        "static_closest_robot_collider": str(
+                            info.get("static_closest_robot_collider", "")
+                        ),
+                        "static_closest_environment_collider": str(
+                            info.get("static_closest_environment_collider", "")
+                        ),
+                        "self_collision": int(self_collision),
+                        "self_geometry_valid": int(self_valid),
+                        "self_surface_gap_m": float(
+                            info.get("self_surface_gap_m", MISSING_DISTANCE_M)
+                        ),
+                        "self_closest_first_collider": str(
+                            info.get("self_closest_first_collider", "")
+                        ),
+                        "self_closest_second_collider": str(
+                            info.get("self_closest_second_collider", "")
+                        ),
                         "physical_safety_controller": str(
                             info.get("physical_safety_controller", "none")
                         ),
@@ -1937,6 +2401,13 @@ def _run() -> None:
                         ),
                         "physical_safety_fallback_applied": int(
                             bool(physical_safety.get("fallback_applied", False))
+                        ),
+                        "physical_safety_objective_solver_fallback": int(
+                            bool(
+                                physical_safety.get(
+                                    "objective_solver_fallback", False
+                                )
+                            )
                         ),
                         "physical_safety_failure_reasons_json": json.dumps(
                             list(physical_safety.get("failure_reasons", ())),
@@ -1988,6 +2459,98 @@ def _run() -> None:
                             physical_safety.get("status", "")
                         ),
                         "physical_safety_solve_time_ms": physical_solve_time_ms,
+                        "physical_safety_objective_mode": str(
+                            physical_safety.get("objective_mode", "joint_nominal")
+                        ),
+                        "physical_safety_objective_schema": str(
+                            physical_safety.get("objective_schema", "unknown")
+                        ),
+                        "physical_safety_correction_rate_norm_radps2": float(
+                            physical_safety.get(
+                                "correction_rate_norm_radps2", 0.0
+                            )
+                        ),
+                        "physical_safety_task_progress_active": int(
+                            bool(
+                                physical_safety.get(
+                                    "task_progress_active", False
+                                )
+                            )
+                        ),
+                        "physical_safety_task_progress_phase": str(
+                            physical_safety.get(
+                                "task_progress_phase", "inactive"
+                            )
+                        ),
+                        "physical_safety_task_progress_source": str(
+                            physical_safety.get(
+                                "task_progress_source", "inactive"
+                            )
+                        ),
+                        "physical_safety_task_progress_gate_reason": str(
+                            physical_safety.get(
+                                "task_progress_gate_reason", "inactive"
+                            )
+                        ),
+                        "physical_safety_task_progress_nominal_mps": float(
+                            physical_safety.get(
+                                "task_progress_nominal_mps", 0.0
+                            )
+                        ),
+                        "physical_safety_task_progress_A_mps": float(
+                            physical_safety.get("task_progress_A_mps", 0.0)
+                        ),
+                        "physical_safety_task_progress_retained_target_mps": float(
+                            physical_safety.get(
+                                "task_progress_retained_target_mps", 0.0
+                            )
+                        ),
+                        "physical_safety_task_progress_filtered_mps": float(
+                            physical_safety.get(
+                                "task_progress_filtered_mps", 0.0
+                            )
+                        ),
+                        "physical_safety_task_progress_A_shortfall_mps": float(
+                            physical_safety.get(
+                                "task_progress_A_shortfall_mps", 0.0
+                            )
+                        ),
+                        "physical_safety_task_progress_shortfall_mps": float(
+                            physical_safety.get(
+                                "task_progress_shortfall_mps", 0.0
+                            )
+                        ),
+                        "physical_safety_task_progress_excess_over_nominal_mps": float(
+                            physical_safety.get(
+                                "task_progress_excess_over_nominal_mps", 0.0
+                            )
+                        ),
+                        "physical_safety_task_progress_base_objective": float(
+                            physical_safety.get(
+                                "task_progress_base_objective", 0.0
+                            )
+                        ),
+                        "physical_safety_task_progress_penalty_objective": float(
+                            physical_safety.get(
+                                "task_progress_penalty_objective", 0.0
+                            )
+                        ),
+                        "physical_safety_diagnostics_json": json.dumps(
+                            physical_safety,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        "physical_command_provenance_json": json.dumps(
+                            info.get("physical_command_provenance", {}),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        "task_progress_v1": _task_progress_v1(
+                            controller_event,
+                            float(info.get("controller_t", 0.0)),
+                            bool(step_success),
+                        ),
+                        "pre_step_state_fingerprint": pre_step_state_fingerprint,
                         "rmpflow_valid_hand_obstacles": int(
                             info.get("rmpflow_valid_hand_obstacles", 0)
                         ),
@@ -2143,6 +2706,14 @@ def _run() -> None:
                 "encounter_active_count": int(encounter_active_count),
                 **_source_restoration_row_fields(restoration_diagnostics),
                 "scene_layout_id": initial_scene_layout_id,
+                "initial_state_fingerprint": initial_state_fingerprint,
+                "response_branch_state_fingerprint": (
+                    response_branch_state_fingerprint
+                ),
+                "response_branch_step": int(response_branch_step),
+                "exact_prefix_digest_through_branch": (
+                    exact_prefix_digest_through_branch
+                ),
                 "screening_layout_id": initial_scene_layout_id,
                 "initial_cube_positions": initial_cube_positions.tolist(),
                 "initial_active_cube_position": [
@@ -2197,6 +2768,8 @@ def _run() -> None:
                 "grasp_acquisition_count": int(grasp_acquisition_count),
                 "grasp_loss_count": int(grasp_loss_count),
                 "release_command_count": int(release_command_count),
+                "object_drop_count": int(object_drop_count),
+                "object_drop": bool(object_drop_count > 0),
                 "task_phase_paused_steps": int(task_phase_paused_steps),
                 "task_phase_reentry_count": int(task_phase_reentry_count),
                 "max_consecutive_physical_safety_intervention_steps": int(
@@ -2217,6 +2790,41 @@ def _run() -> None:
                 ),
                 "strict_task_semantics_last_decision": (
                     strict_semantics_last_decision
+                ),
+                "state_aware_recovery_enabled": bool(
+                    initial_recovery_payload.get(
+                        "enabled", args.state_aware_recovery
+                    )
+                ),
+                "state_aware_recovery_config": recovery_config,
+                "state_aware_recovery_final_state": recovery_final_state,
+                "state_aware_recovery_last_decision": recovery_last_decision,
+                "state_aware_recovery_control_steps": int(
+                    recovery_control_steps
+                ),
+                "state_aware_recovery_place_control_steps": int(
+                    recovery_place_control_steps
+                ),
+                "state_aware_recovery_regrasp_control_steps": int(
+                    recovery_regrasp_control_steps
+                ),
+                "state_aware_recovery_handoff_steps": int(
+                    recovery_handoff_steps
+                ),
+                "state_aware_recovery_stage_change_steps": int(
+                    recovery_stage_change_steps
+                ),
+                "state_aware_recovery_activation_count": int(
+                    recovery_final_state.get("activation_count", 0) or 0
+                ),
+                "state_aware_recovery_completion_count": int(
+                    recovery_final_state.get("completion_count", 0) or 0
+                ),
+                "state_aware_recovery_replan_count": int(
+                    recovery_final_state.get("replan_count", 0) or 0
+                ),
+                "state_aware_recovery_timeout_count": int(
+                    recovery_final_state.get("timeout_count", 0) or 0
                 ),
                 "errp_count": int(errp_count),
                 "errp_feedback_sum": float(errp_feedback_sum),
@@ -2266,6 +2874,27 @@ def _run() -> None:
                 "near_steps": int(near_steps),
                 "near_miss_steps": int(near_miss_steps),
                 "geometry_valid_steps": int(geometry_valid_steps),
+                "logged_surface_gap_below_configured_margin_steps": int(
+                    logged_gap_below_configured_margin_steps
+                ),
+                "logged_surface_gap_below_configured_margin_episode": bool(
+                    logged_gap_below_configured_margin_steps > 0
+                ),
+                "logged_surface_gap_below_2cm_steps": int(
+                    logged_gap_below_2cm_steps
+                ),
+                "logged_surface_gap_below_2cm_episode": bool(
+                    logged_gap_below_2cm_steps > 0
+                ),
+                "configured_safe_gap_m": float(args.cbf_safe_gap_m),
+                "static_collision_steps": int(static_collision_steps),
+                "static_collision_episode": bool(static_collision_steps > 0),
+                "static_geometry_valid_steps": int(static_geometry_valid_steps),
+                "min_static_surface_gap_m": float(min_static_surface_gap_m),
+                "self_collision_steps": int(self_collision_steps),
+                "self_collision_episode": bool(self_collision_steps > 0),
+                "self_geometry_valid_steps": int(self_geometry_valid_steps),
+                "min_self_surface_gap_m": float(min_self_surface_gap_m),
                 "collision_event_count": int(collision_event_count),
                 "collision_max_consecutive_steps": int(
                     collision_max_consecutive_steps
@@ -2395,6 +3024,7 @@ def _run() -> None:
             "seed": args.seed,
             "render": args.render,
             "live_vr": args.live_vr,
+            "synthetic_human": bool(args.synthetic_human),
             "vr_tracking_timeout_sec": args.vr_tracking_timeout_sec,
             "action_scale": args.action_scale,
             "checkpoint_task_reward_version": checkpoint_reward_version,
@@ -2427,6 +3057,23 @@ def _run() -> None:
             "cbf_prediction_horizon_s": args.cbf_prediction_horizon_s,
             "cbf_max_prediction_buffer_m": args.cbf_max_prediction_buffer_m,
             "cbf_max_joint_speed_rad_s": args.cbf_max_joint_speed_rad_s,
+            "cbf_objective_mode": args.cbf_objective_mode,
+            "cbf_task_space_weight": args.cbf_task_space_weight,
+            "cbf_task_yaw_length_scale_m_per_rad": (
+                args.cbf_task_yaw_length_scale_m_per_rad
+            ),
+            "cbf_joint_regularization_epsilon": (
+                args.cbf_joint_regularization_epsilon
+            ),
+            "cbf_correction_smoothness_weight": (
+                args.cbf_correction_smoothness_weight
+            ),
+            "cbf_progress_retention_rho": args.cbf_progress_retention_rho,
+            "cbf_progress_penalty_weight": args.cbf_progress_penalty_weight,
+            "cbf_progress_nominal_threshold_mps": (
+                args.cbf_progress_nominal_threshold_mps
+            ),
+            "extended_safety_logging": bool(args.extended_safety_logging),
             "phase_gate_close_dist": args.phase_gate_close_dist,
             "phase_gate_max_hold": args.phase_gate_max_hold,
             "pseudo_errp_enabled": args.pseudo_errp_enabled,
@@ -2459,6 +3106,12 @@ def _run() -> None:
             "strict_task_semantics": bool(args.strict_task_semantics),
             "strict_task_semantics_config": (
                 dict(rows[0].get("strict_task_semantics_config", {}))
+                if rows
+                else {}
+            ),
+            "state_aware_recovery": bool(args.state_aware_recovery),
+            "state_aware_recovery_config": (
+                dict(rows[0].get("state_aware_recovery_config", {}))
                 if rows
                 else {}
             ),
@@ -2596,6 +3249,21 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     near_miss_steps = int(sum(row.get("near_miss_steps", 0) for row in rows))
     geometry_valid_steps = int(
         sum(row.get("geometry_valid_steps", 0) for row in rows)
+    )
+    below_margin_steps = int(
+        sum(
+            row.get("logged_surface_gap_below_configured_margin_steps", 0)
+            for row in rows
+        )
+    )
+    below_2cm_steps = int(
+        sum(row.get("logged_surface_gap_below_2cm_steps", 0) for row in rows)
+    )
+    static_collision_steps = int(
+        sum(row.get("static_collision_steps", 0) for row in rows)
+    )
+    self_collision_steps = int(
+        sum(row.get("self_collision_steps", 0) for row in rows)
     )
     gate_active_steps = int(
         sum(row.get("safety_gate_active_count", 0) for row in rows)
@@ -2775,6 +3443,37 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "near_steps": near_steps,
         "near_miss_steps": near_miss_steps,
         "geometry_valid_steps": geometry_valid_steps,
+        "logged_surface_gap_below_configured_margin_steps": below_margin_steps,
+        "logged_surface_gap_below_configured_margin_episode_count": int(
+            sum(
+                bool(
+                    row.get(
+                        "logged_surface_gap_below_configured_margin_episode",
+                        False,
+                    )
+                )
+                for row in rows
+            )
+        ),
+        "logged_surface_gap_below_2cm_steps": below_2cm_steps,
+        "logged_surface_gap_below_2cm_episode_count": int(
+            sum(
+                bool(row.get("logged_surface_gap_below_2cm_episode", False))
+                for row in rows
+            )
+        ),
+        "valid_logged_surface_gap_denominator_steps": geometry_valid_steps,
+        "static_collision_steps": static_collision_steps,
+        "static_collision_episode_count": int(
+            sum(bool(row.get("static_collision_episode", False)) for row in rows)
+        ),
+        "self_collision_steps": self_collision_steps,
+        "self_collision_episode_count": int(
+            sum(bool(row.get("self_collision_episode", False)) for row in rows)
+        ),
+        "object_drop_episode_count": int(
+            sum(bool(row.get("object_drop", False)) for row in rows)
+        ),
         "collision_event_count": collision_event_count,
         "collision_duration_s": float(
             sum(row.get("collision_duration_s", 0.0) for row in rows)
@@ -2899,6 +3598,13 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "mean_rms_gate_ee_jerk_mps3": float(
             np.mean([row.get("rms_gate_ee_jerk_mps3", 0.0) for row in rows])
         ),
+        "mean_episode_min_surface_gap_m": float(
+            np.mean([row.get("min_surface_gap", MISSING_DISTANCE_M) for row in rows])
+        ),
+        "global_min_logged_surface_gap_m": float(
+            min(row.get("min_surface_gap", MISSING_DISTANCE_M) for row in rows)
+        ),
+        # Backward-compatible alias. New reports must use the explicit name.
         "min_surface_gap": float(
             min(row.get("min_surface_gap", MISSING_DISTANCE_M) for row in rows)
         ),
@@ -3263,6 +3969,19 @@ def _write_csv(path: str, rows: list[dict[str, Any]]) -> None:
         "strict_task_semantics_config",
         "strict_task_semantics_final_state",
         "strict_task_semantics_last_decision",
+        "state_aware_recovery_enabled",
+        "state_aware_recovery_config",
+        "state_aware_recovery_final_state",
+        "state_aware_recovery_last_decision",
+        "state_aware_recovery_control_steps",
+        "state_aware_recovery_place_control_steps",
+        "state_aware_recovery_regrasp_control_steps",
+        "state_aware_recovery_handoff_steps",
+        "state_aware_recovery_stage_change_steps",
+        "state_aware_recovery_activation_count",
+        "state_aware_recovery_completion_count",
+        "state_aware_recovery_replan_count",
+        "state_aware_recovery_timeout_count",
         "errp_count",
         "errp_feedback_sum",
         "mean_errp_feedback",
@@ -3380,6 +4099,9 @@ def _write_csv(path: str, rows: list[dict[str, Any]]) -> None:
                 "strict_task_semantics_config",
                 "strict_task_semantics_final_state",
                 "strict_task_semantics_last_decision",
+                "state_aware_recovery_config",
+                "state_aware_recovery_final_state",
+                "state_aware_recovery_last_decision",
             ):
                 csv_row[diagnostic_field] = json.dumps(
                     row.get(diagnostic_field, {}), sort_keys=True
@@ -3419,6 +4141,7 @@ def _write_step_csv(path: str, rows: list[dict[str, Any]]) -> None:
         "grasp_acquired",
         "grasp_lost",
         "release_commanded",
+        "object_drop",
         "ee_cube_dist_m",
         "cube_target_dist_m",
         "cube_target_xy_error_m",
@@ -3447,6 +4170,31 @@ def _write_step_csv(path: str, rows: list[dict[str, Any]]) -> None:
         "strict_cbf_pause_steps",
         "strict_task_semantics_state_json",
         "strict_task_semantics_last_decision_json",
+        "state_aware_recovery_enabled",
+        "state_aware_recovery_control_authority",
+        "state_aware_recovery_active",
+        "state_aware_recovery_mode",
+        "state_aware_recovery_stage",
+        "state_aware_recovery_reason",
+        "state_aware_recovery_target_x_m",
+        "state_aware_recovery_target_y_m",
+        "state_aware_recovery_target_z_m",
+        "state_aware_recovery_desired_gripper_closed",
+        "state_aware_recovery_anchor_ready",
+        "state_aware_recovery_ready_streak",
+        "state_aware_recovery_anchor_error_m",
+        "state_aware_recovery_handoff_attempted",
+        "state_aware_recovery_handoff",
+        "state_aware_recovery_handoff_event",
+        "state_aware_recovery_handoff_progress",
+        "state_aware_recovery_stage_changed",
+        "state_aware_recovery_timed_out",
+        "state_aware_recovery_activation_count",
+        "state_aware_recovery_completion_count",
+        "state_aware_recovery_replan_count",
+        "state_aware_recovery_timeout_count",
+        "state_aware_recovery_state_json",
+        "state_aware_recovery_last_decision_json",
         "encounter_id",
         "encounter_target_severity",
         "encounter_active",
@@ -3471,6 +4219,19 @@ def _write_step_csv(path: str, rows: list[dict[str, Any]]) -> None:
         "near_miss",
         "human_collision",
         "geometry_valid",
+        "logged_surface_gap_below_configured_margin",
+        "logged_surface_gap_below_2cm",
+        "configured_safe_gap_m",
+        "static_collision",
+        "static_geometry_valid",
+        "static_surface_gap_m",
+        "static_closest_robot_collider",
+        "static_closest_environment_collider",
+        "self_collision",
+        "self_geometry_valid",
+        "self_surface_gap_m",
+        "self_closest_first_collider",
+        "self_closest_second_collider",
         "left_hand_speed_mps",
         "right_hand_speed_mps",
         "left_robot_surface_speed_mps",
@@ -3531,6 +4292,7 @@ def _write_step_csv(path: str, rows: list[dict[str, Any]]) -> None:
         "physical_safety_valid_hand_count",
         "physical_safety_tracked_hand_count",
         "physical_safety_fallback_applied",
+        "physical_safety_objective_solver_fallback",
         "physical_safety_failure_reasons_json",
         "intentional_human_absence",
         "physical_safety_constraint_count",
@@ -3547,6 +4309,26 @@ def _write_step_csv(path: str, rows: list[dict[str, Any]]) -> None:
         "physical_safety_feasible",
         "physical_safety_status",
         "physical_safety_solve_time_ms",
+        "physical_safety_objective_mode",
+        "physical_safety_objective_schema",
+        "physical_safety_correction_rate_norm_radps2",
+        "physical_safety_task_progress_active",
+        "physical_safety_task_progress_phase",
+        "physical_safety_task_progress_source",
+        "physical_safety_task_progress_gate_reason",
+        "physical_safety_task_progress_nominal_mps",
+        "physical_safety_task_progress_A_mps",
+        "physical_safety_task_progress_retained_target_mps",
+        "physical_safety_task_progress_filtered_mps",
+        "physical_safety_task_progress_A_shortfall_mps",
+        "physical_safety_task_progress_shortfall_mps",
+        "physical_safety_task_progress_excess_over_nominal_mps",
+        "physical_safety_task_progress_base_objective",
+        "physical_safety_task_progress_penalty_objective",
+        "physical_safety_diagnostics_json",
+        "physical_command_provenance_json",
+        "task_progress_v1",
+        "pre_step_state_fingerprint",
         "rmpflow_valid_hand_obstacles",
     ]
     with open(path, "w", encoding="utf-8", newline="") as f:

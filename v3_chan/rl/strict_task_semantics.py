@@ -5,7 +5,7 @@ import math
 from typing import Any, Mapping
 
 
-STRICT_TASK_SEMANTICS_SCHEMA = "physical_event_driven_pick_place_v3"
+STRICT_TASK_SEMANTICS_SCHEMA = "physical_event_driven_pick_place_v5"
 
 
 @dataclass(frozen=True)
@@ -35,10 +35,15 @@ class StrictTaskSemanticsConfig:
     cbf_pause_enter_norm_radps: float = 0.05
     cbf_pause_exit_norm_radps: float = 0.01
     cbf_pause_exit_confirmation_steps: int = 6
+    state_aware_recovery: bool = False
 
     def validated(self) -> "StrictTaskSemanticsConfig":
         if not isinstance(self.enabled, bool):
             raise ValueError("strict task semantics enabled must be boolean")
+        if not isinstance(self.state_aware_recovery, bool):
+            raise ValueError("state-aware recovery must be boolean")
+        if self.state_aware_recovery and not self.enabled:
+            raise ValueError("state-aware recovery requires strict task semantics")
         nonnegative = (
             self.grasp_close_distance_m,
             self.place_xy_tolerance_m,
@@ -127,9 +132,15 @@ class StrictTaskSemanticsState:
     cbf_hold_latched: bool = False
     cbf_clear_streak: int = 0
     cbf_pause_steps: int = 0
+    cbf_intervention_observed: bool = False
     phase_hold_total_steps: int = 0
     phase_reentry_count: int = 0
+    recovery_request_count: int = 0
+    place_recovery_started: bool = False
+    place_recovery_in_progress: bool = False
+    place_recovery_completed: bool = False
     pending_retry_open: bool = False
+    release_command_applied: bool = False
     success_latched: bool = False
     failure_reason: str = ""
     last_transition_reason: str = "reset"
@@ -149,6 +160,7 @@ class StrictTaskPhaseDecision:
     reentry: bool
     success_latched: bool
     failure_reason: str
+    recovery_request: str = "none"
 
 
 class StrictTaskSemanticsController:
@@ -165,7 +177,16 @@ class StrictTaskSemanticsController:
         self.state = StrictTaskSemanticsState(initial_cube_z_m=initial_z)
 
     def restore_state(self, state: Mapping[str, Any]) -> None:
-        self.state = StrictTaskSemanticsState(**dict(state))
+        restored = StrictTaskSemanticsState(**dict(state))
+        if restored.success_latched and not restored.release_command_applied:
+            raise ValueError(
+                "A strict-task success snapshot must include an applied release command"
+            )
+        if restored.success_latched and restored.failure_reason:
+            raise ValueError(
+                "A strict-task snapshot cannot be both successful and failed"
+            )
+        self.state = restored
 
     def consume_pending_retry_open(self) -> bool:
         pending = bool(self.state.pending_retry_open)
@@ -175,8 +196,147 @@ class StrictTaskSemanticsController:
     def release_command_allowed(self) -> bool:
         return bool(
             self.state.place_ready_latched
+            and not self.state.release_command_applied
             and not self.state.cbf_hold_latched
             and not self.state.failure_reason
+        )
+
+    def notify_gripper_command_applied(
+        self,
+        *,
+        event: int,
+        command: str | None,
+        grasp_candidate_before_command: bool,
+    ) -> bool:
+        """Latch an actual guarded release only after robot.apply_action succeeds."""
+
+        if command != "open" or int(event) != 7:
+            return False
+        if not isinstance(grasp_candidate_before_command, bool):
+            raise ValueError("grasp candidate before release must be boolean")
+        if not grasp_candidate_before_command:
+            self.state.last_transition_reason = "release_open_after_grasp_loss_rejected"
+            return False
+        if not self.release_command_allowed():
+            raise RuntimeError(
+                "strict release OPEN was applied without a valid release gate"
+            )
+        self.state.release_command_applied = True
+        self.state.release_settle_streak = 0
+        self.state.release_wait_steps = 0
+        self.state.last_transition_reason = "release_command_applied"
+        return True
+
+    def classify_external_reentry(
+        self, *, event: int, evidence: TaskPhysicalEvidence
+    ) -> str:
+        """Classify an external re-entry without trusting one grasp bit."""
+
+        evidence = evidence.validated()
+        event = int(event)
+        self._observe(evidence)
+        if evidence.grasp_candidate:
+            self.state.grasp_lost_streak = 0
+            self.state.last_transition_reason = "external_reentry_confirmed_attached"
+            return "place"
+        if event >= 7 and self.state.release_command_applied:
+            self.state.last_transition_reason = "external_reentry_confirmed_released"
+            return "released"
+        if event >= 4:
+            self.state.grasp_lost_streak += 1
+            if self.state.grasp_lost_streak < int(
+                self.config.grasp_lost_confirmation_steps
+            ):
+                self.state.phase_hold_total_steps += 1
+                self.state.last_transition_reason = (
+                    "hold_for_external_reentry_grasp_loss_confirmation"
+                )
+                return "wait"
+        self.state.last_transition_reason = "external_reentry_confirmed_missing_grasp"
+        return "regrasp"
+
+    def latch_failure(self, reason: str) -> None:
+        failure = str(reason).strip()
+        if not failure:
+            raise ValueError("strict task failure reason must be non-empty")
+        if not self.state.success_latched:
+            self.state.failure_reason = failure
+            self.state.last_transition_reason = failure
+
+    def begin_recovery(
+        self, *, mode: str, evidence: TaskPhysicalEvidence
+    ) -> None:
+        """Clear stale phase gates while a non-policy recovery owns control."""
+
+        evidence = evidence.validated()
+        recovery_mode = str(mode)
+        if recovery_mode not in ("place", "regrasp"):
+            raise ValueError(f"Unsupported recovery mode: {recovery_mode!r}")
+        self.state.grasp_lost_streak = 0
+        self.state.grasp_approach_wait_steps = 0
+        self.state.grasp_confirmation_wait_steps = 0
+        self.state.place_ready_streak = 0
+        self.state.place_ready_latched = False
+        self.state.place_wait_steps = 0
+        self.state.release_settle_streak = 0
+        self.state.release_wait_steps = 0
+        self.state.release_command_applied = False
+        if recovery_mode == "regrasp":
+            self.state.initial_cube_z_m = float(evidence.cube_z_m)
+            self.state.maximum_cube_lift_m = 0.0
+            self.state.grasp_observed = False
+            self.state.grasp_confirmation_streak = 0
+        else:
+            self.state.place_recovery_started = True
+            self.state.place_recovery_in_progress = True
+        self.state.last_transition_reason = (
+            f"state_aware_{recovery_mode}_recovery_started"
+        )
+
+    def recovery_handoff(
+        self,
+        *,
+        event: int,
+        progress: float,
+        mode: str,
+        evidence: TaskPhysicalEvidence,
+        event_before: int,
+        progress_before: float,
+    ) -> StrictTaskPhaseDecision:
+        """Record a physical-anchor handoff without replaying an old primitive."""
+
+        evidence = evidence.validated()
+        recovery_mode = str(mode)
+        if recovery_mode not in ("place", "regrasp"):
+            raise ValueError(f"Unsupported recovery handoff mode: {recovery_mode!r}")
+        self.state.cbf_hold_latched = False
+        self.state.cbf_clear_streak = 0
+        self.state.grasp_lost_streak = 0
+        self.state.place_ready_streak = 0
+        self.state.place_ready_latched = False
+        self.state.place_wait_steps = 0
+        self.state.release_settle_streak = 0
+        self.state.release_wait_steps = 0
+        self.state.release_command_applied = False
+        if recovery_mode == "regrasp":
+            self.state.pending_retry_open = False
+            self.state.initial_cube_z_m = float(evidence.cube_z_m)
+            self.state.maximum_cube_lift_m = 0.0
+            self.state.grasp_observed = False
+            self.state.grasp_confirmation_streak = 0
+            self.state.grasp_approach_wait_steps = 0
+            self.state.grasp_confirmation_wait_steps = 0
+        else:
+            self.state.place_recovery_started = True
+            self.state.place_recovery_in_progress = False
+            self.state.place_recovery_completed = True
+        return self._decision(
+            int(event),
+            float(progress),
+            f"state_aware_{recovery_mode}_handoff",
+            int(event_before),
+            float(progress_before),
+            reentry=True,
         )
 
     def update(
@@ -214,7 +374,11 @@ class StrictTaskSemanticsController:
         # settled is an outcome check rather than a nominal-motion phase
         # transition.  A simultaneous CBF intervention must not prevent a
         # valid placement from accumulating its confirmation streak.
-        if event == 7 and not evidence.grasp_candidate:
+        if (
+            event == 7
+            and self.state.release_command_applied
+            and not evidence.grasp_candidate
+        ):
             return self._update_released_cube_settling(
                 event=event,
                 progress=progress,
@@ -224,6 +388,12 @@ class StrictTaskSemanticsController:
 
         released_from_cbf = self._update_cbf_hold(evidence)
         if self.state.cbf_hold_latched:
+            if 4 <= event <= 6:
+                self.state.grasp_lost_streak = (
+                    0
+                    if evidence.grasp_candidate
+                    else self.state.grasp_lost_streak + 1
+                )
             self.state.cbf_pause_steps += 1
             self.state.phase_hold_total_steps += 1
             return self._decision(
@@ -326,6 +496,7 @@ class StrictTaskSemanticsController:
                 self.state.place_ready_latched = True
             if self.state.place_ready_latched:
                 self.state.place_wait_steps = 0
+                self.state.release_command_applied = False
                 return self._decision(
                     7,
                     0.0,
@@ -333,12 +504,78 @@ class StrictTaskSemanticsController:
                     event,
                     progress,
                 )
+            if (
+                self.config.state_aware_recovery
+                and self.state.cbf_intervention_observed
+                and not self.state.place_recovery_started
+                and not self.state.place_recovery_in_progress
+                and progress <= 0.05
+                and not self._place_spatially_ready(evidence)
+            ):
+                self.state.place_recovery_started = True
+                self.state.place_reentry_count += 1
+                self.state.phase_reentry_count += 1
+                self.state.recovery_request_count += 1
+                self.state.place_wait_steps = 0
+                self.state.place_ready_streak = 0
+                return self._decision(
+                    event,
+                    progress,
+                    "request_place_recovery_on_event6_entry",
+                    event,
+                    progress,
+                    held=True,
+                    reentry=True,
+                    recovery_request="place",
+                )
+            if (
+                self.config.state_aware_recovery
+                and self.state.cbf_intervention_observed
+                and not self.state.place_recovery_in_progress
+                and progress >= 1.0 - 1e-9
+                and not self._place_spatially_ready(evidence)
+            ):
+                self.state.place_recovery_started = True
+                self.state.place_reentry_count += 1
+                self.state.phase_reentry_count += 1
+                self.state.recovery_request_count += 1
+                self.state.place_wait_steps = 0
+                self.state.place_ready_streak = 0
+                return self._decision(
+                    event,
+                    progress,
+                    "request_place_recovery_at_event6_endpoint",
+                    event,
+                    progress,
+                    held=True,
+                    reentry=True,
+                    recovery_request="place",
+                )
             if proposed_event != event and not self.state.place_ready_latched:
                 self.state.place_wait_steps += 1
                 self.state.phase_hold_total_steps += 1
                 if self.state.place_wait_steps >= int(
                     self.config.place_confirmation_timeout_steps
                 ):
+                    if (
+                        self.config.state_aware_recovery
+                        and self.state.cbf_intervention_observed
+                    ):
+                        self.state.place_reentry_count += 1
+                        self.state.phase_reentry_count += 1
+                        self.state.recovery_request_count += 1
+                        self.state.place_wait_steps = 0
+                        self.state.place_ready_streak = 0
+                        return self._decision(
+                            event,
+                            progress,
+                            "request_place_recovery_after_readiness_timeout",
+                            event,
+                            progress,
+                            held=True,
+                            reentry=True,
+                            recovery_request="place",
+                        )
                     if self.state.place_reentry_count < int(
                         self.config.maximum_place_reentries
                     ):
@@ -411,6 +648,7 @@ class StrictTaskSemanticsController:
             if intervention >= float(self.config.cbf_pause_enter_norm_radps):
                 self.state.cbf_hold_latched = True
                 self.state.cbf_clear_streak = 0
+                self.state.cbf_intervention_observed = True
             return False
         if intervention <= float(self.config.cbf_pause_exit_norm_radps):
             self.state.cbf_clear_streak += 1
@@ -433,6 +671,75 @@ class StrictTaskSemanticsController:
         terminal_event: int,
         evidence: TaskPhysicalEvidence,
     ) -> StrictTaskPhaseDecision:
+        if self.config.state_aware_recovery:
+            self.state.place_ready_streak = 0
+            self.state.place_ready_latched = False
+            self.state.place_wait_steps = 0
+            self.state.release_settle_streak = 0
+            self.state.release_wait_steps = 0
+            if evidence.grasp_candidate:
+                if self._place_spatially_ready(evidence):
+                    target_progress = progress if event == 6 else 1.0
+                    return self._decision(
+                        6,
+                        target_progress,
+                        "cbf_reentry_preserve_place_progress",
+                        event,
+                        progress,
+                        reentry=True,
+                    )
+                self.state.recovery_request_count += 1
+                return self._decision(
+                    event,
+                    progress,
+                    "cbf_reentry_request_place_recovery",
+                    event,
+                    progress,
+                    held=True,
+                    reentry=True,
+                    recovery_request="place",
+                )
+            if (
+                self.state.grasp_observed
+                and self.state.release_command_applied
+                and self._place_ready(evidence, require_grasp=False)
+            ):
+                return self._decision(
+                    7,
+                    0.0,
+                    "cbf_reentry_confirm_released_at_target",
+                    event,
+                    progress,
+                    reentry=True,
+                )
+            if (
+                4 <= event <= 6
+                and self.state.grasp_observed
+                and self.state.grasp_lost_streak
+                < int(self.config.grasp_lost_confirmation_steps)
+            ):
+                self.state.phase_hold_total_steps += 1
+                return self._decision(
+                    event,
+                    progress,
+                    "hold_for_post_cbf_grasp_loss_confirmation",
+                    event,
+                    progress,
+                    held=True,
+                    reentry=True,
+                )
+            self.state.recovery_request_count += 1
+            return self._decision(
+                event,
+                progress,
+                "cbf_reentry_request_regrasp_recovery",
+                event,
+                progress,
+                held=True,
+                reentry=True,
+                recovery_request="regrasp",
+            )
+
         if event == 7 and evidence.grasp_candidate:
             still_place_ready = self._place_ready(
                 evidence, require_grasp=True
@@ -497,9 +804,11 @@ class StrictTaskSemanticsController:
         terminal_event: int,
         evidence: TaskPhysicalEvidence,
     ) -> StrictTaskPhaseDecision:
-        settled_release = self._place_ready(
-            evidence, require_grasp=False
-        ) and not evidence.grasp_candidate
+        settled_release = bool(
+            self.state.release_command_applied
+            and self._place_ready(evidence, require_grasp=False)
+            and not evidence.grasp_candidate
+        )
         self.state.release_settle_streak = (
             self.state.release_settle_streak + 1 if settled_release else 0
         )
@@ -519,11 +828,15 @@ class StrictTaskSemanticsController:
         if self.state.release_wait_steps >= int(
             self.config.release_settle_timeout_steps
         ):
-            self.state.failure_reason = "release_not_settled"
+            self.state.failure_reason = (
+                "release_not_commanded"
+                if not self.state.release_command_applied
+                else "release_not_settled"
+            )
             return self._decision(
                 terminal_event,
                 0.0,
-                "release_not_settled",
+                self.state.failure_reason,
                 event,
                 progress,
             )
@@ -531,7 +844,11 @@ class StrictTaskSemanticsController:
         return self._decision(
             event,
             progress,
-            "hold_for_released_cube_settling",
+            (
+                "hold_for_release_command_application"
+                if not self.state.release_command_applied
+                else "hold_for_released_cube_settling"
+            ),
             event,
             progress,
             held=True,
@@ -550,6 +867,44 @@ class StrictTaskSemanticsController:
         if self.state.grasp_retry_count < int(self.config.maximum_grasp_retries):
             self.state.grasp_retry_count += 1
             self.state.phase_reentry_count += int(count_reentry)
+            if (
+                self.config.state_aware_recovery
+                and self.state.cbf_intervention_observed
+                and reason in (
+                    "grasp_lost_before_release",
+                    "cbf_reentry_missing_grasp",
+                )
+            ):
+                # A cube lost after a safety detour must be recovered from its
+                # current physical pose.  Replaying event 0 here would target
+                # the historical pre-detour cube pose and recreate the OOD
+                # failure that the recovery bridge is intended to remove.
+                self.state.recovery_request_count += 1
+                self.state.pending_retry_open = False
+                self.state.initial_cube_z_m = float(evidence.cube_z_m)
+                self.state.maximum_cube_lift_m = 0.0
+                self.state.grasp_observed = False
+                self.state.grasp_confirmation_streak = 0
+                self.state.grasp_lost_streak = 0
+                self.state.grasp_approach_wait_steps = 0
+                self.state.grasp_confirmation_wait_steps = 0
+                self.state.place_ready_streak = 0
+                self.state.place_ready_latched = False
+                self.state.place_wait_steps = 0
+                self.state.release_settle_streak = 0
+                self.state.release_wait_steps = 0
+                self.state.release_command_applied = False
+                return self._decision(
+                    event_before,
+                    progress_before,
+                    f"request_regrasp_recovery_after_{reason}",
+                    event_before,
+                    progress_before,
+                    held=True,
+                    retry_started=True,
+                    reentry=True,
+                    recovery_request="regrasp",
+                )
             self.state.pending_retry_open = True
             self.state.initial_cube_z_m = float(evidence.cube_z_m)
             self.state.maximum_cube_lift_m = 0.0
@@ -563,6 +918,7 @@ class StrictTaskSemanticsController:
             self.state.place_wait_steps = 0
             self.state.release_settle_streak = 0
             self.state.release_wait_steps = 0
+            self.state.release_command_applied = False
             return self._decision(
                 0,
                 0.0,
@@ -597,6 +953,18 @@ class StrictTaskSemanticsController:
             and (evidence.grasp_candidate if require_grasp else True)
         )
 
+    def _place_spatially_ready(self, evidence: TaskPhysicalEvidence) -> bool:
+        return bool(
+            evidence.cube_target_xy_error_m
+            <= float(self.config.place_xy_tolerance_m)
+            and evidence.cube_target_z_error_m
+            <= float(self.config.place_z_tolerance_m)
+            and self.state.maximum_cube_lift_m
+            >= float(self.config.minimum_cube_lift_m)
+            and self.state.grasp_observed
+            and evidence.grasp_candidate
+        )
+
     def _decision(
         self,
         event: int,
@@ -608,6 +976,7 @@ class StrictTaskSemanticsController:
         held: bool = False,
         retry_started: bool = False,
         reentry: bool = False,
+        recovery_request: str = "none",
     ) -> StrictTaskPhaseDecision:
         self.state.last_transition_reason = str(reason)
         changed = bool(
@@ -624,6 +993,7 @@ class StrictTaskSemanticsController:
             reentry=bool(reentry),
             success_latched=bool(self.state.success_latched),
             failure_reason=str(self.state.failure_reason),
+            recovery_request=str(recovery_request),
         )
 
 

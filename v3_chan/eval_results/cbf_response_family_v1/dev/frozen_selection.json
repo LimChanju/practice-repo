@@ -1,0 +1,30 @@
+{
+  "schema_version": "cbf_response_family_frozen_selection_v1",
+  "development_run_manifest": {
+    "path": "v3_chan/eval_results/cbf_response_family_v1/dev/run_manifest.json",
+    "sha256": "ee06af821ec69e280e86ca549245cfa1fb6cf111263ea2d2da6437bca9f993dc"
+  },
+  "selected_conditions": {
+    "B": "B_task_consistent_eps_0p20",
+    "C": "C_smooth_intervention_lambda_4p00"
+  },
+  "eligible_conditions": {
+    "B": [
+      "B_task_consistent_eps_0p01",
+      "B_task_consistent_eps_0p05",
+      "B_task_consistent_eps_0p20"
+    ],
+    "C": [
+      "C_smooth_intervention_lambda_0p25",
+      "C_smooth_intervention_lambda_1p00",
+      "C_smooth_intervention_lambda_4p00"
+    ]
+  },
+  "selection_evidence": {
+    "analysis": "v3_chan/eval_results/cbf_response_family_v1/dev_tradeoff_analysis/tradeoff_analysis.json",
+    "B_reason": "eps=0.20 preserves A's 17/19 task success and failure identities while reducing mean paired added path and recovery duration; smaller eps settings fall to 16/19.",
+    "C_reason": "lambda=4.00 is the strongest qualified smoothness representative: 18/19 success, lowest CBF-window EE/joint jerk and correction total variation, with the expected path/recovery trade-off retained."
+  },
+  "selection_rule": "Development-only Pareto selection; no held-out result was accessed before freezing these IDs.",
+  "heldout_unlocked": true
+}
